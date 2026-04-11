@@ -1,0 +1,97 @@
+# ─────────────────────────────────────────────
+#  EletroFrio ML — .gitignore
+# ─────────────────────────────────────────────
+
+# ── Banco de dados gerado automaticamente ────
+# Cada um gera o próprio rodando: python main.py
+data/
+*.db
+*.sqlite
+*.sqlite3
+
+# ── Modelos treinados (arquivos grandes) ─────
+# Cada um treina o próprio rodando o pipeline
+models/
+*.pkl
+*.joblib
+
+# ── Gráficos e relatórios gerados ────────────
+reports/
+
+# ─────────────────────────────────────────────
+#  Python
+# ─────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+.Python
+
+# ── Ambientes virtuais ────────────────────────
+venv/
+.venv/
+env/
+.env/
+ENV/
+env.bak/
+
+# ── Distribuição / build ──────────────────────
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# ─────────────────────────────────────────────
+#  Jupyter Notebooks
+# ─────────────────────────────────────────────
+.ipynb_checkpoints/
+*.ipynb
+
+# ─────────────────────────────────────────────
+#  IDEs e editores
+# ─────────────────────────────────────────────
+
+# VS Code
+.vscode/
+
+# PyCharm / IntelliJ
+.idea/
+*.iml
+
+# Spyder
+.spyderproject.cfg
+.spyproject/
+
+# ─────────────────────────────────────────────
+#  Sistema Operacional
+# ─────────────────────────────────────────────
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Linux
+*~
+
+# ─────────────────────────────────────────────
+#  Variáveis de ambiente / segredos
+# ─────────────────────────────────────────────
+.env
+.env.*
+secrets.py
+config_local.py
+
+# ─────────────────────────────────────────────
+#  Logs e temporários
+# ─────────────────────────────────────────────
+*.log
+*.tmp
+*.bak
