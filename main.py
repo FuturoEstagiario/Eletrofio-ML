@@ -13,10 +13,11 @@ Orquestra todo o pipeline de ML:
   Etapa 7 → Geração de relatório final e salvamento dos modelos
 
 Uso:
-    python main.py [--rapido] [--sem-busca]
+    python main.py [--rapido] [--sem-busca] [--live]
 
     --rapido    : usa dataset menor (500 registros/compressor)
     --sem-busca : pula GridSearchCV (mais rápido, mas sem otimização)
+    --live      : consome endpoints reais da Eletrofrio e abre chamados
 """
 
 import os
@@ -27,7 +28,6 @@ import argparse
 import warnings
 warnings.filterwarnings("ignore")
 
-import numpy as np
 import pandas as pd
 
 # ── Módulos do projeto ────────────────────────────────────────────────────────
@@ -35,6 +35,12 @@ sys.path.insert(0, os.path.dirname(__file__))
 from src.data_generator import gerar_dataset, salvar_sqlite
 from src.preprocessor import carregar_e_preparar, engenharia_features, ENGINEERED_FEATURES
 from src.models import SVMModel, RandomForestModel, imprimir_metricas
+from src.api_client import buscar_alarmes, buscar_unidades, buscar_telemetria
+from src.api_preprocessor import (
+    processar_alarmes, enriquecer_com_telemetria,
+    salvar_leituras_real, carregar_leituras_real,
+)
+from src.chamado_service import avaliar_e_abrir_chamados
 from src.visualizacoes import (
     plot_distribuicao_classes,
     plot_correlacao,
@@ -72,6 +78,8 @@ def parse_args():
                         help="Pula GridSearchCV para treino mais rapido")
     parser.add_argument("--forcar-geracao", action="store_true",
                         help="Regenera o banco SQLite mesmo se ja existir")
+    parser.add_argument("--live", action="store_true",
+                        help="Consome endpoints reais da Eletrofrio e abre chamados automaticos")
     return parser.parse_args()
 
 
@@ -104,6 +112,44 @@ def salvar_relatorio(resultados: dict, tempo_total: float, args) -> str:
         json.dump(relatorio, f, ensure_ascii=False, indent=2)
     print(f"\n  [OK] Relatorio JSON salvo em: {path}")
     return path
+
+
+# ===============================================================
+# Pipeline live (endpoints reais)
+# ===============================================================
+
+def pipeline_live(rf_model, db_path: str) -> None:
+    sep = "-" * 65
+    print("\n" + sep)
+    print("  MODO LIVE -- Consumindo Endpoints Reais da Eletrofrio")
+    print(sep)
+
+    print("\n  [1/4] Buscando alarmes...")
+    alarmes = buscar_alarmes()
+    print(f"        {len(alarmes)} alarmes recebidos")
+
+    print("  [2/4] Processando alarmes e enriquecendo com telemetria...")
+    df_alarmes = processar_alarmes(alarmes)
+    df_enriquecido = enriquecer_com_telemetria(df_alarmes, buscar_telemetria)
+
+    print("  [3/4] Salvando leituras reais no SQLite...")
+    salvar_leituras_real(df_enriquecido, db_path)
+
+    print("  [4/4] Avaliando risco e abrindo chamados...")
+    feature_cols = [
+        "criticidade_score", "tempo_min", "sem_tratativa", "silenciado",
+        "temp_media", "temp_maxima", "temp_amplitude",
+        "temp_volatilidade", "temp_tendencia",
+    ]
+    chamados = avaliar_e_abrir_chamados(
+        df_leituras=df_enriquecido,
+        modelo_predict_proba=rf_model.predict_proba,
+        feature_cols=feature_cols,
+    )
+
+    print(f"\n  [LIVE] {len(chamados)} chamado(s) aberto(s) automaticamente.")
+    df_leituras = carregar_leituras_real(db_path)
+    print(f"  [LIVE] {len(df_leituras)} dispositivos monitorados no banco.")
 
 
 # ===============================================================
@@ -200,15 +246,19 @@ def main():
     tempo_total = time.time() - t_inicio
     salvar_relatorio(resultados, tempo_total, args)
 
-    melhor = max(resultados, key=lambda k: resultados[k]["f1"])
+    # -- Etapa 8 (opcional): Pipeline live com endpoints reais ---------------
+    if args.live:
+        pipeline_live(rf, DB_PATH)
+
+    melhor = max(resultados, key=lambda k: resultados[k]["recall"])
 
     print("\n" + "=" * 65)
     print("  [CONCLUIDO] PIPELINE FINALIZADO COM SUCESSO")
     print("=" * 65)
-    print(f"\n  Melhor modelo (F1) : {melhor}")
-    print(f"  F1-Score           : {resultados[melhor]['f1']:.4f}")
-    print(f"  ROC-AUC            : {resultados[melhor]['roc_auc']:.4f}")
-    print(f"  Recall             : {resultados[melhor]['recall']:.4f}")
+    print(f"\n  Melhor modelo (Recall) : {melhor}")
+    print(f"  Recall                 : {resultados[melhor]['recall']:.4f}")
+    print(f"  F1-Score               : {resultados[melhor]['f1']:.4f}")
+    print(f"  ROC-AUC                : {resultados[melhor]['roc_auc']:.4f}")
     print(f"\n  Artefatos gerados:")
     print(f"    Banco de dados  : {DB_PATH}")
     print(f"    Modelos         : {MODELS_DIR}/")

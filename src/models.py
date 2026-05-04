@@ -24,7 +24,6 @@ from sklearn.model_selection import GridSearchCV, StratifiedKFold
 from sklearn.metrics import (
     accuracy_score, precision_score, recall_score,
     f1_score, roc_auc_score, confusion_matrix,
-    classification_report,
 )
 
 
@@ -110,13 +109,13 @@ class SVMModel(BaseModel):
 
         if busca_hiperpar:
             print("    Executando GridSearchCV (4×4 grid, 5-fold CV)...")
-            base_svm = SVC(kernel="rbf", class_weight="balanced", probability=True)
+            base_svm = SVC(kernel="rbf", probability=True)
             cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
             grid = GridSearchCV(
                 base_svm,
                 self.PARAM_GRID,
                 cv=cv,
-                scoring="f1",
+                scoring="recall",
                 n_jobs=-1,
                 verbose=0,
             )
@@ -127,7 +126,7 @@ class SVMModel(BaseModel):
         else:
             self.model = SVC(
                 kernel="rbf", C=10, gamma="scale",
-                class_weight="balanced", probability=True,
+                probability=True,
             )
             self.model.fit(X_train, y_train)
 
@@ -165,15 +164,13 @@ class RandomForestModel(BaseModel):
 
         if busca_hiperpar:
             print("    Executando GridSearchCV (3×3×2×2 grid, 5-fold CV)...")
-            base_rf = RandomForestClassifier(
-                class_weight="balanced", random_state=42, n_jobs=-1
-            )
+            base_rf = RandomForestClassifier(random_state=42, n_jobs=-1)
             cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
             grid = GridSearchCV(
                 base_rf,
                 self.PARAM_GRID,
                 cv=cv,
-                scoring="f1",
+                scoring="recall",
                 n_jobs=-1,
                 verbose=0,
             )
@@ -184,7 +181,7 @@ class RandomForestModel(BaseModel):
         else:
             self.model = RandomForestClassifier(
                 n_estimators=200, max_depth=20,
-                class_weight="balanced", random_state=42, n_jobs=-1,
+                random_state=42, n_jobs=-1,
             )
             self.model.fit(X_train, y_train)
 

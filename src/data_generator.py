@@ -180,13 +180,6 @@ def salvar_sqlite(df: pd.DataFrame, db_path: str) -> None:
     print(f"    Registros c/ falha : {n_falhas:,}  ({n_falhas/total*100:.1f}%)")
 
 
-def carregar_sqlite(db_path: str) -> pd.DataFrame:
-    """Carrega a tabela principal do SQLite e retorna um DataFrame."""
-    with sqlite3.connect(db_path) as conn:
-        df = pd.read_sql("SELECT * FROM compressores_leituras", conn, index_col="id")
-    return df
-
-
 if __name__ == "__main__":
     print("=" * 60)
     print("  EletroFrio — Gerador de Dados de Compressores")
