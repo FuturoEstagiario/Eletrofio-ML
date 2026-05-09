@@ -29,10 +29,15 @@ def _parse_tempo_minutos(tempo_str: str | None) -> int:
 
 def _extrair_features_telemetria(telemetria: dict) -> dict:
     datasets = telemetria.get("datasets", [])
-    if not datasets or not datasets[0].get("data"):
+    if not datasets:
         return {}
 
-    valores = [v for v in datasets[0]["data"] if v is not None]
+    # A API usa "values"; prefere "Temperatura Ambiente"
+    ds = next(
+        (d for d in datasets if "temperatura ambiente" in d.get("label", "").lower()),
+        datasets[0],
+    )
+    valores = [v for v in ds.get("values", ds.get("data", [])) if v is not None]
     if not valores:
         return {}
 
