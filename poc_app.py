@@ -22,10 +22,12 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 import numpy as np
 from flask import Flask, jsonify, render_template, request
+from whitenoise import WhiteNoise
 from src.api_client import buscar_alarmes, buscar_unidades, buscar_telemetria, abrir_chamado
 from src.api_preprocessor import processar_alarmes
 
 app = Flask(__name__, template_folder="views", static_folder="views")
+app.wsgi_app = WhiteNoise(app.wsgi_app, root="views/", prefix="static")
 
 # ── Configuração de criticidade ───────────────────────────────────────────────
 
