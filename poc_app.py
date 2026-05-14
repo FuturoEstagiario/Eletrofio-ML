@@ -29,6 +29,9 @@ from src.api_preprocessor import processar_alarmes
 app = Flask(__name__, template_folder="views", static_folder="views")
 app.wsgi_app = WhiteNoise(app.wsgi_app, root="views/", prefix="static")
 
+_cache = {"alarmes_raw": [], "unidades": [], "ts": None}
+CACHE_TTL = 600
+
 # ── Configuração de criticidade ───────────────────────────────────────────────
 
 CRIT_CONFIG = {
@@ -101,21 +104,36 @@ def _preparar_linhas(df, alarmes_raw):
 
 # ── Rotas — Dashboard ─────────────────────────────────────────────────────────
 
-@app.route("/")
-def dashboard():
-    erros = {}
-    alarmes_raw, df, unidades = [], __import__("pandas").DataFrame(), []
+def _atualizar_cache():
+    import time
+    agora = time.time()
+    if _cache["ts"] and agora - _cache["ts"] < CACHE_TTL:
+        return {}
 
+    erros = {}
     try:
-        alarmes_raw = buscar_alarmes()
-        df = processar_alarmes(alarmes_raw)
+        _cache["alarmes_raw"] = buscar_alarmes()
     except Exception as e:
         erros["alarmes"] = str(e)
 
     try:
-        unidades = buscar_unidades()
+        _cache["unidades"] = buscar_unidades()
     except Exception as e:
         erros["unidades"] = str(e)
+
+    if not erros:
+        _cache["ts"] = agora
+
+    return erros
+
+
+@app.route("/")
+def dashboard():
+    import pandas as pd
+    erros = _atualizar_cache()
+    alarmes_raw = _cache["alarmes_raw"]
+    unidades    = _cache["unidades"]
+    df = processar_alarmes(alarmes_raw) if alarmes_raw else pd.DataFrame()
 
     stats        = _computar_stats(df)
     linhas       = _preparar_linhas(df, alarmes_raw)
