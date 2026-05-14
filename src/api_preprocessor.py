@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 import re
-import sqlite3
 import numpy as np
 import pandas as pd
 from datetime import datetime
+from psycopg2.extras import execute_values
+from src.db import get_connection
 
 CRITICIDADE_SCORE = {"C": 4, "A": 3, "M": 2, "B": 1, "I": 0}
 
@@ -95,18 +96,30 @@ def enriquecer_com_telemetria(
     return df_alarmes.merge(df_feats, on="dispositivo_id", how="left")
 
 
-def salvar_leituras_real(df: pd.DataFrame, db_path: str) -> None:
+def salvar_leituras_real(df: pd.DataFrame) -> None:
     df = df.copy()
-    df["origem"] = "real"
-    df["coletado_em"] = datetime.now().isoformat()
+    df["chamado_aberto"] = False
+    df["timestamp"] = datetime.now().isoformat()
 
-    with sqlite3.connect(db_path) as conn:
-        df.to_sql("leituras_real", conn, if_exists="replace", index=False)
+    colunas = [
+        "dispositivo_id", "loja_id", "loja_nome", "tag",
+        "criticidade", "alarme_desc", "chamado_aberto", "timestamp",
+    ]
+    cols_presentes = [c for c in colunas if c in df.columns]
+    valores = [tuple(row[c] for c in cols_presentes) for _, row in df.iterrows()]
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            execute_values(
+                cur,
+                f"INSERT INTO leituras_real ({', '.join(cols_presentes)}) VALUES %s",
+                valores,
+            )
         conn.commit()
 
-    print(f"  [OK] {len(df)} leituras reais salvas em leituras_real (SQLite)")
+    print(f"  [OK] {len(df)} leituras reais salvas em leituras_real (Supabase)")
 
 
-def carregar_leituras_real(db_path: str) -> pd.DataFrame:
-    with sqlite3.connect(db_path) as conn:
+def carregar_leituras_real() -> pd.DataFrame:
+    with get_connection() as conn:
         return pd.read_sql("SELECT * FROM leituras_real", conn)

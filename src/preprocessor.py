@@ -9,12 +9,12 @@ Responsável por:
   5. Normalização (StandardScaler)
 """
 
-import sqlite3
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from imblearn.over_sampling import SMOTE
+from src.db import get_connection
 
 # ── Features brutas ──────────────────────────────────────────────────────────
 
@@ -80,7 +80,6 @@ ENGINEERED_FEATURES = RAW_FEATURES + [
 # ── Carregamento e Preparação ────────────────────────────────────────────────
 
 def carregar_e_preparar(
-    db_path: str,
     test_size: float = 0.2,
     aplicar_smote: bool = True,
     seed: int = 42,
@@ -96,8 +95,8 @@ def carregar_e_preparar(
           feature_names                      → lista de features usadas
           df_original                        → DataFrame original completo
     """
-    print("  [1/5] Carregando dados do SQLite...")
-    with sqlite3.connect(db_path) as conn:
+    print("  [1/5] Carregando dados do Supabase...")
+    with get_connection() as conn:
         df = pd.read_sql("SELECT * FROM compressores_leituras", conn, index_col="id")
 
     print(f"        {len(df):,} registros carregados | "

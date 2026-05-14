@@ -32,7 +32,7 @@ import pandas as pd
 
 # ── Módulos do projeto ────────────────────────────────────────────────────────
 sys.path.insert(0, os.path.dirname(__file__))
-from src.data_generator import gerar_dataset, salvar_sqlite
+from src.data_generator import gerar_dataset, salvar_sqlite  # SQLite local para treino
 from src.preprocessor import carregar_e_preparar, engenharia_features, ENGINEERED_FEATURES
 from src.models import SVMModel, RandomForestModel, imprimir_metricas
 from src.api_client import buscar_alarmes, buscar_unidades, buscar_telemetria
@@ -118,7 +118,7 @@ def salvar_relatorio(resultados: dict, tempo_total: float, args) -> str:
 # Pipeline live (endpoints reais)
 # ===============================================================
 
-def pipeline_live(rf_model, db_path: str) -> None:
+def pipeline_live(rf_model) -> None:
     sep = "-" * 65
     print("\n" + sep)
     print("  MODO LIVE -- Consumindo Endpoints Reais da Eletrofrio")
@@ -132,8 +132,8 @@ def pipeline_live(rf_model, db_path: str) -> None:
     df_alarmes = processar_alarmes(alarmes)
     df_enriquecido = enriquecer_com_telemetria(df_alarmes, buscar_telemetria)
 
-    print("  [3/4] Salvando leituras reais no SQLite...")
-    salvar_leituras_real(df_enriquecido, db_path)
+    print("  [3/4] Salvando leituras reais no Supabase...")
+    salvar_leituras_real(df_enriquecido)
 
     print("  [4/4] Avaliando risco e abrindo chamados...")
     feature_cols = [
@@ -148,7 +148,7 @@ def pipeline_live(rf_model, db_path: str) -> None:
     )
 
     print(f"\n  [LIVE] {len(chamados)} chamado(s) aberto(s) automaticamente.")
-    df_leituras = carregar_leituras_real(db_path)
+    df_leituras = carregar_leituras_real()
     print(f"  [LIVE] {len(df_leituras)} dispositivos monitorados no banco.")
 
 
@@ -182,7 +182,7 @@ def main():
     print("  ETAPA 2 -- Carregamento e Pre-processamento")
     print(sep)
 
-    dados = carregar_e_preparar(DB_PATH, test_size=0.2, aplicar_smote=True)
+    dados = carregar_e_preparar(test_size=0.2, aplicar_smote=True)
     X_train = dados["X_train"]
     X_test  = dados["X_test"]
     y_train = dados["y_train"]
@@ -248,7 +248,7 @@ def main():
 
     # -- Etapa 8 (opcional): Pipeline live com endpoints reais ---------------
     if args.live:
-        pipeline_live(rf, DB_PATH)
+        pipeline_live(rf)
 
     melhor = max(resultados, key=lambda k: resultados[k]["recall"])
 
