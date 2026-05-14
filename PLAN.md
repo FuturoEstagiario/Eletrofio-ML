@@ -12,6 +12,10 @@
 - [x] Criar `src/api_preprocessor.py` — transformação de dados reais
 - [x] Criar `src/chamado_service.py` — abertura automática de chamados
 - [x] Adicionar flag `--live` ao `main.py`
+- [x] Criar `src/db.py` — conexão centralizada com Supabase (psycopg2)
+- [x] Migrar `preprocessor.py` para ler `compressores_leituras` do Supabase
+- [x] Migrar `api_preprocessor.py` para ler/escrever `leituras_real` no Supabase
+- [x] Atualizar `main.py` — `carregar_e_preparar()` sem `db_path`; `pipeline_live()` sem `db_path`
 
 ---
 
@@ -31,7 +35,8 @@ O pipeline opera em dois modos. No modo padrão, dados sintéticos de 10 compres
 | `sem_tratativa` | `api_preprocessor.py` | Flag 1 quando `eventoDhCad` é nulo (alarme sem resposta registrada) |
 | `_parse_tempo_minutos()` | `api_preprocessor.py` | Converte strings como "6d 22h 41m" para minutos totais via regex |
 | `enriquecer_com_telemetria()` | `api_preprocessor.py` | Itera sobre dispositivos e faz GET `/telemetria` para cada um, extraindo features de temperatura |
-| `pipeline_live()` | `main.py` | Etapa 8 opcional: consome API real, salva em SQLite (`leituras_real`), avalia risco e abre chamados |
+| `pipeline_live()` | `main.py` | Etapa 8 opcional: consome API real, salva em Supabase (`leituras_real`), avalia risco e abre chamados |
+| `get_connection()` | `src/db.py` | Retorna conexão psycopg2 para o Supabase usando keyword args (evita quebra de URL por `@` na senha) |
 | `urllib3.disable_warnings()` | `api_client.py` | Suprime avisos de SSL do certificado auto-assinado do endpoint da Eletrofrio |
 
 ---
