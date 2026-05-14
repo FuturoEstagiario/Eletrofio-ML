@@ -16,6 +16,8 @@ Uso:
 import argparse
 import os
 import sys
+import time
+import threading
 from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(__file__))
@@ -31,6 +33,24 @@ app.wsgi_app = WhiteNoise(app.wsgi_app, root="views/", prefix="static")
 
 _cache = {"alarmes_raw": [], "unidades": [], "ts": None}
 CACHE_TTL = 600
+
+
+def _fetch_background():
+    while True:
+        try:
+            _cache["alarmes_raw"] = buscar_alarmes()
+        except Exception:
+            pass
+        try:
+            _cache["unidades"] = buscar_unidades()
+        except Exception:
+            pass
+        _cache["ts"] = time.time()
+        time.sleep(CACHE_TTL)
+
+
+_bg = threading.Thread(target=_fetch_background, daemon=True)
+_bg.start()
 
 # ── Configuração de criticidade ───────────────────────────────────────────────
 
@@ -104,35 +124,12 @@ def _preparar_linhas(df, alarmes_raw):
 
 # ── Rotas — Dashboard ─────────────────────────────────────────────────────────
 
-def _atualizar_cache():
-    import time
-    agora = time.time()
-    if _cache["ts"] and agora - _cache["ts"] < CACHE_TTL:
-        return {}
-
-    erros = {}
-    try:
-        _cache["alarmes_raw"] = buscar_alarmes()
-    except Exception as e:
-        erros["alarmes"] = str(e)
-
-    try:
-        _cache["unidades"] = buscar_unidades()
-    except Exception as e:
-        erros["unidades"] = str(e)
-
-    if not erros:
-        _cache["ts"] = agora
-
-    return erros
-
-
 @app.route("/")
 def dashboard():
     import pandas as pd
-    erros = _atualizar_cache()
     alarmes_raw = _cache["alarmes_raw"]
     unidades    = _cache["unidades"]
+    erros       = {} if _cache["ts"] else {"status": "Carregando dados, aguarde e recarregue em instantes..."}
     df = processar_alarmes(alarmes_raw) if alarmes_raw else pd.DataFrame()
 
     stats        = _computar_stats(df)
