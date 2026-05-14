@@ -5,7 +5,7 @@ import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 BASE_URL = "https://credenciamento.eletrofrio.com.br:5900/galileo/api/api_hackathon"
-TIMEOUT = 30
+TIMEOUT = 300
 EQUIPE = "EletroFrio ML"
 
 
