@@ -92,19 +92,16 @@
     const fmt = (v) => v != null ? `${v}°C` : "—";
     const NA  = '<span class="text-muted">—</span>';
 
-    document.querySelectorAll(`.tele-media[data-id="${id}"]`).forEach((el) => {
-      el.innerHTML = features ? `<span class="temp-val">${fmt(features.temp_media)}</span>` : NA;
-    });
-    document.querySelectorAll(`.tele-maxima[data-id="${id}"]`).forEach((el) => {
-      const alta = features && features.temp_maxima > 30 ? " temp-alta" : "";
-      el.innerHTML = features ? `<span class="temp-val${alta}">${fmt(features.temp_maxima)}</span>` : NA;
-    });
-    document.querySelectorAll(`.tele-tend[data-id="${id}"]`).forEach((el) => {
+    document.querySelectorAll(`.tele-temp[data-id="${id}"]`).forEach((el) => {
       if (!features) { el.innerHTML = NA; return; }
-      const t = features.temp_tendencia;
-      const cls  = t > 0 ? "tend-up" : t < 0 ? "tend-down" : "";
-      const icon = t > 0 ? "▲" : t < 0 ? "▼" : "●";
-      el.innerHTML = `<span class="tendencia ${cls}">${icon} ${t}</span>`;
+      const alta = features.temp_maxima > 30 ? " temp-alta" : "";
+      const sep  = `<span class="text-muted" style="margin:0 3px">/</span>`;
+      el.innerHTML =
+        `<span class="temp-val tele-label">mín</span><span class="temp-val">${fmt(features.temp_minima)}</span>`
+        + sep
+        + `<span class="temp-val tele-label">méd</span><span class="temp-val">${fmt(features.temp_media)}</span>`
+        + sep
+        + `<span class="temp-val tele-label">máx</span><span class="temp-val${alta}">${fmt(features.temp_maxima)}</span>`;
     });
   }
 
@@ -177,13 +174,11 @@
     return `
       <tr class="row-crit-${crit}">
         <td><span class="crit-badge crit-${crit}">${crit} · ${label}</span></td>
-        <td class="fw-medium text-nowrap">${a.loja_nome || "—"}</td>
+        <td class="fw-medium td-loja" title="${a.loja_nome || ""}">${a.loja_nome || "—"}</td>
         <td><code class="tag-code">${a.tag || "—"}</code></td>
-        <td class="text-nowrap text-sm">${a.alarme_desc || "—"}</td>
+        <td class="text-sm td-alarme" title="${a.alarme_desc || ""}">${a.alarme_desc || "—"}</td>
         <td class="text-muted text-sm text-nowrap">${a.tempo || "—"}</td>
-        <td class="text-center tele-media"  data-id="${id}"><span class="spinner"></span></td>
-        <td class="text-center tele-maxima" data-id="${id}"><span class="spinner"></span></td>
-        <td class="text-center tele-tend"   data-id="${id}"><span class="spinner"></span></td>
+        <td class="text-center tele-temp" data-id="${id}"><span class="spinner"></span></td>
         <td class="text-center">${trat}</td>
         <td class="text-center">
           <button class="btn-action"
@@ -245,7 +240,7 @@
 
     tbody.innerHTML = slice.length
       ? slice.map(buildAlarmeRow).join("")
-      : `<tr><td colspan="10" class="text-center text-muted py-4">Nenhum alarme ativo.</td></tr>`;
+      : `<tr><td colspan="8" class="text-center text-muted py-4">Nenhum alarme ativo.</td></tr>`;
 
     if (pag) pag.innerHTML = total > ALARMES_PG_SZ
       ? buildPaginacao(pagina, total, ALARMES_PG_SZ, "irPaginaAlarmes")
@@ -382,8 +377,11 @@
 
     _chamadoPayload = { dispositivo_id: dispId, loja_id: lojaId, loja_nome: lojaNome, tag };
 
-    document.getElementById("mc-dispositivo").textContent =
-      `[${crit}] ${tag} — ${lojaNome} (ID: ${dispId})`;
+    const critLabel = CRIT_LABELS[crit] || crit;
+    document.getElementById("mc-dispositivo").innerHTML = `
+      <div class="mb-2"><span class="crit-badge crit-${crit}">${crit} · ${critLabel}</span></div>
+      <div class="modal-device-row"><i class="bi bi-shop"></i><span>${lojaNome}</span></div>
+      <div class="modal-device-row"><i class="bi bi-cpu"></i><span>${tag}</span><span class="modal-id">ID: ${dispId}</span></div>`;
 
     document.getElementById("mc-motivo").value =
       alarme ? `Alarme ativo: ${alarme}` : "";
@@ -408,7 +406,7 @@
     }
 
     btnConf.disabled = true;
-    btnConf.textContent = "Enviando...";
+    btnConf.innerHTML = '<i class="bi bi-hourglass-split"></i> Enviando…';
     feedback.innerHTML = "";
 
     const payload = {
@@ -427,23 +425,31 @@
 
       if (res.ok && json.status === "ok") {
         feedback.innerHTML = `
-          <div class="alert alert-success py-2">
-            <strong>Chamado aberto com sucesso!</strong>
-            <pre class="mb-0 mt-1" style="font-size:.75rem">${JSON.stringify(json.resposta, null, 2)}</pre>
+          <div class="modal-feedback-ok">
+            <i class="bi bi-check-circle-fill" style="font-size:1.1rem;flex-shrink:0"></i>
+            <div>
+              <div class="fw-semibold">Chamado aberto com sucesso!</div>
+              <pre class="modal-resp-pre">${JSON.stringify(json.resposta, null, 2)}</pre>
+            </div>
           </div>`;
-        btnConf.textContent = "Confirmar Chamado";
+        btnConf.innerHTML = '<i class="bi bi-send-fill"></i> Confirmar Chamado';
       } else {
         feedback.innerHTML = `
-          <div class="alert alert-danger py-2">
-            <strong>Erro:</strong> ${json.mensagem || "Falha ao abrir chamado."}
+          <div class="modal-feedback-err">
+            <i class="bi bi-x-circle-fill" style="font-size:1.1rem;flex-shrink:0"></i>
+            <span><strong>Erro:</strong> ${json.mensagem || "Falha ao abrir chamado."}</span>
           </div>`;
         btnConf.disabled = false;
-        btnConf.textContent = "Confirmar Chamado";
+        btnConf.innerHTML = '<i class="bi bi-send-fill"></i> Confirmar Chamado';
       }
     } catch (err) {
-      feedback.innerHTML = `<div class="alert alert-danger py-2"><strong>Erro de rede:</strong> ${err.message}</div>`;
+      feedback.innerHTML = `
+        <div class="modal-feedback-err">
+          <i class="bi bi-x-circle-fill" style="font-size:1.1rem;flex-shrink:0"></i>
+          <span><strong>Erro de rede:</strong> ${err.message}</span>
+        </div>`;
       btnConf.disabled = false;
-      btnConf.textContent = "Confirmar Chamado";
+      btnConf.innerHTML = '<i class="bi bi-send-fill"></i> Confirmar Chamado';
     }
   };
 
