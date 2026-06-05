@@ -40,8 +40,7 @@
   </nav>
 
   <div class="sidebar-footer">
-    <i class="bi bi-circle-fill text-success" style="font-size:.55rem"></i>
-    <span>API conectada</span>
+    <span id="api-status-label"><i class="bi bi-circle-fill text-secondary" style="font-size:.55rem"></i> Verificando...</span>
     <!-- botão fechar — visível só no mobile -->
     <button class="sidebar-close-mobile" onclick="closeMobileSidebar()" title="Fechar">
       <i class="bi bi-x-lg"></i>
@@ -198,6 +197,8 @@
                 <th>Tag</th>
                 <th>Alarme</th>
                 <th>Tempo</th>
+                <th class="text-center">Risco</th>
+                <th class="text-center">Anomalia</th>
                 <th class="text-center">Temperatura</th>
                 <th class="text-center">Tratativa</th>
                 <th class="text-center">Ação</th>

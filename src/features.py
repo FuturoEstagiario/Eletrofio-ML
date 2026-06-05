@@ -13,10 +13,18 @@ def extrair_features_janela(temp, degelo, setpoint, onoff):
     temp_arr = np.nan_to_num(temp_arr, nan=np.nanmean(temp_arr))
 
     setpoint_arr = np.array(setpoint, dtype=float) if setpoint else np.full_like(temp_arr, np.nan)
-    setpoint_arr = np.nan_to_num(setpoint_arr, nan=np.nanmean(setpoint_arr))
+    if len(setpoint_arr) > 0:
+        setpoint_arr = np.nan_to_num(setpoint_arr, nan=np.nanmean(setpoint_arr))
 
     degelo_arr = np.array(degelo, dtype=float) if degelo else np.zeros_like(temp_arr)
     onoff_arr = np.array(onoff, dtype=float) if onoff else np.ones_like(temp_arr)
+
+    min_len = min(len(temp_arr), len(setpoint_arr), len(degelo_arr), len(onoff_arr))
+    if min_len > 0:
+        temp_arr = temp_arr[:min_len]
+        setpoint_arr = setpoint_arr[:min_len]
+        degelo_arr = degelo_arr[:min_len]
+        onoff_arr = onoff_arr[:min_len]
 
     features["temp_mean"] = np.mean(temp_arr)
     features["temp_std"] = np.std(temp_arr)
@@ -80,6 +88,10 @@ def extrair_features_janela(temp, degelo, setpoint, onoff):
         features["onoff_num_ciclos"] = 0
         features["onoff_duracao_media"] = 0.0
         features["onoff_fracao_ligado"] = 0.0
+
+    for k, v in features.items():
+        if isinstance(v, float) and np.isnan(v):
+            features[k] = 0.0
 
     return features
 

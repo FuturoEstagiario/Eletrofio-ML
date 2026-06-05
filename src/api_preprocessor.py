@@ -5,8 +5,37 @@ import pandas as pd
 from datetime import datetime
 from psycopg2.extras import execute_values
 from src.db import get_connection
-from src.config import CRITICIDADE_SCORE, CRITICIDADE_FALHA, SERIES_MAP
+from src.config import CRITICIDADE_SCORE, CRITICIDADE_FALHA
 from src.features import extrair_features_janela
+
+_TEMP_LABELS = [
+    "Temperatura Ambiente",
+    "L1 - Temperatura da sucção",
+    "L1 - Temperatura de Evaporação",
+    "L1 - Temperatura de Condensação",
+    "Temperatura de Saída do Glicol",
+    "Temperatura do Ar Externo",
+    "Temperatura de Degelo",
+    "Temperatura Subresfriamento",
+]
+
+_SETPOINT_LABELS = [
+    "Setpoint Ambiente",
+    "L1 - Setpoint Sucção",
+    "L1 - Setpoint Condensação",
+]
+
+_ONOFF_LABELS = [
+    "Estado de Funcionamento ON/OFF",
+    "L1 - Status Compressor 1",
+    "Status Solenoide",
+    "Acionamento Bomba 1",
+]
+
+_DEGELO_LABELS = [
+    "Status Degelo",
+    "Degelo Glicol",
+]
 
 
 def _parse_tempo_minutos(tempo_str: str | None) -> int:
@@ -29,13 +58,27 @@ def _extrair_series_telemetria(telemetria: dict) -> dict:
     datasets = telemetria.get("datasets", [])
     if not datasets:
         return {}
-    series = {}
-    for ds in datasets:
-        label = ds.get("label", "")
-        values = ds.get("values", ds.get("data", []))
-        if label in SERIES_MAP:
-            series[SERIES_MAP[label]] = [v for v in values if v is not None]
-    return series
+
+    found = {}
+    for lbl, label_list in [
+        ("temp", _TEMP_LABELS),
+        ("setpoint", _SETPOINT_LABELS),
+        ("onoff", _ONOFF_LABELS),
+        ("degelo", _DEGELO_LABELS),
+    ]:
+        for candidate in label_list:
+            ds = next(
+                (d for d in datasets if d.get("label", "") == candidate),
+                None,
+            )
+            if ds is not None:
+                values = ds.get("values", ds.get("data", []))
+                cleaned = [v for v in values if v is not None]
+                if cleaned:
+                    found[lbl] = cleaned
+                    break
+
+    return found
 
 
 def _extrair_features_telemetria(telemetria: dict) -> dict:

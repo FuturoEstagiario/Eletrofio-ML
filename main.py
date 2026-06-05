@@ -152,6 +152,7 @@ def pipeline_real(args) -> None:
         print("    Usando timestamps dos alarmes...")
         df_normais, df_anomalos = preparar_dados_com_labels()
 
+    df_feat = pd.read_parquet("dados_coletados/features.parquet")
     feature_cols = get_feature_columns(df_feat)
     print(f"    Features: {len(feature_cols)}")
     print(f"    Normais: {len(df_normais)} | Anomalos: {len(df_anomalos)}")
@@ -227,6 +228,18 @@ def main():
     banner()
     args = parse_args()
     t_inicio = time.time()
+
+    if args.real:
+        pipeline_real(args)
+        tempo_total = time.time() - t_inicio
+        print("\n" + "=" * 65)
+        print("  [CONCLUIDO] PIPELINE REAL FINALIZADO COM SUCESSO")
+        print("=" * 65)
+        print(f"\n  Modelo OneClassSVM salvo em {MODELS_DIR}/")
+        print(f"  Para iniciar o dashboard: python poc_app.py")
+        print(f"\n  Tempo total: {tempo_total:.1f}s")
+        print("=" * 65 + "\n")
+        return
 
     registros = 500 if args.rapido else 2000
     busca = not args.sem_busca
@@ -312,10 +325,6 @@ def main():
 
     tempo_total = time.time() - t_inicio
     salvar_relatorio(resultados, tempo_total, args)
-
-    # -- Etapa 8 (opcional): Pipeline de dados reais (OneClassSVM) ----------
-    if args.real:
-        pipeline_real(args)
 
     # -- Etapa 9 (opcional): Pipeline live com endpoints reais ---------------
     if args.live:

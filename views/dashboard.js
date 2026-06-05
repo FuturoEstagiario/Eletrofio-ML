@@ -12,7 +12,6 @@
 
   function isDesktop() { return window.innerWidth > 992; }
 
-  // Aplica estado colapsado/expandido no desktop
   function setCollapsed(collapsed) {
     if (!sidebar) return;
     sidebar.classList.toggle("collapsed", collapsed);
@@ -20,31 +19,27 @@
     localStorage.setItem(KEY, collapsed ? "1" : "0");
   }
 
-  // Fecha sidebar mobile
   function closeMobile() {
     sidebar?.classList.remove("open");
     overlay?.classList.remove("open");
     document.body.style.overflow = "";
   }
 
-  // Abre sidebar mobile
   function openMobile() {
     sidebar?.classList.add("open");
     overlay?.classList.add("open");
-    document.body.style.overflow = "hidden"; // impede scroll do body
+    document.body.style.overflow = "hidden";
   }
 
-  // Inicialização: limpa estados incompatíveis ao carregar
   if (isDesktop()) {
-    sidebar?.classList.remove("open");   // limpa possível `open` de sessão mobile
+    sidebar?.classList.remove("open");
     overlay?.classList.remove("open");
     setCollapsed(localStorage.getItem(KEY) === "1");
   } else {
-    sidebar?.classList.remove("collapsed"); // limpa possível `collapsed` de sessão desktop
+    sidebar?.classList.remove("collapsed");
     if (wrapper) wrapper.style.marginLeft = "";
   }
 
-  // Toggle principal — chamado pelo botão hamburguer (mobile) e pelo chevron (desktop)
   window.toggleSidebar = function () {
     if (isDesktop()) {
       setCollapsed(!sidebar?.classList.contains("collapsed"));
@@ -53,16 +48,13 @@
     }
   };
 
-  // Fecha ao clicar no overlay (mobile)
   window.closeMobileSidebar = closeMobile;
   overlay?.addEventListener("click", closeMobile);
 
-  // Fecha ao clicar num link (mobile)
   document.querySelectorAll(".sidebar-link").forEach((el) => {
     el.addEventListener("click", () => { if (!isDesktop()) closeMobile(); });
   });
 
-  // Reajusta ao redimensionar a janela
   window.addEventListener("resize", () => {
     if (isDesktop()) {
       closeMobile();
@@ -73,7 +65,30 @@
     }
   });
 
-  // ── Telemetria: carrega em paralelo após a página abrir ────────────────────
+  // ── Health Check ────────────────────────────────────────────────────────────
+
+  async function verificarSaude() {
+    try {
+      const res  = await fetch("/api/health");
+      const json = await res.json();
+      const el   = document.getElementById("api-status-label");
+      if (!el) return;
+      if (json.status === "ok" && json.api) {
+        el.innerHTML =
+          `<span class="text-success"><i class="bi bi-circle-fill" style="font-size:.55rem"></i> API conectada</span>`;
+      } else {
+        el.innerHTML =
+          `<span class="text-danger"><i class="bi bi-circle-fill" style="font-size:.55rem"></i> API indispon&iacute;vel</span>`;
+      }
+    } catch {
+      const el = document.getElementById("api-status-label");
+      if (el) el.innerHTML =
+        `<span class="text-danger"><i class="bi bi-circle-fill" style="font-size:.55rem"></i> API indispon&iacute;vel</span>`;
+    }
+  }
+  verificarSaude();
+
+  // ── Telemetria ──────────────────────────────────────────────────────────────
 
   async function carregarTelemetria(dispositivoId) {
     try {
@@ -105,18 +120,77 @@
     });
   }
 
-  // Coleta IDs únicos da tabela e dispara todos os fetches ao mesmo tempo
-  const ids = [...new Set(
-    [...document.querySelectorAll("[data-id]")].map((el) => el.dataset.id)
-  )];
+  // ── Predição (Risco + Anomalia) ─────────────────────────────────────────────
 
-  if (ids.length) {
-    Promise.all(ids.map(carregarTelemetria)).then((resultados) => {
-      resultados.forEach(({ id, features }) => preencherCelulasTelemetria(id, features));
+  async function carregarPredicao(dispositivoId) {
+    try {
+      const res = await fetch(`/api/predict/${dispositivoId}`);
+      const json = await res.json();
+      if (json.status !== "ok") return { id: dispositivoId, risk: null, anomaly: false };
+      return { id: dispositivoId, risk: json.risk_score, anomaly: json.anomaly, reason: json.anomaly_reason };
+    } catch {
+      return { id: dispositivoId, risk: null, anomaly: false };
+    }
+  }
+
+  function preencherCelulasPredicao(id, pred) {
+    if (!pred) {
+      document.querySelectorAll(`.tele-risco[data-id="${id}"]`).forEach((el) => el.innerHTML = '<span class="text-muted">—</span>');
+      document.querySelectorAll(`.tele-anomalia[data-id="${id}"]`).forEach((el) => el.innerHTML = '<span class="text-muted">—</span>');
+      return;
+    }
+
+    // Risco
+    const risk = pred.risk;
+    document.querySelectorAll(`.tele-risco[data-id="${id}"]`).forEach((el) => {
+      if (risk == null) { el.innerHTML = '<span class="text-muted">—</span>'; return; }
+      const pct = Math.round(risk * 100);
+      const cls = pct < 30 ? "risk-low" : pct < 75 ? "risk-mid" : "risk-high";
+      const label = pct < 30 ? "Baixo" : pct < 75 ? "Médio" : "Alto";
+      el.innerHTML = `<span class="risk-badge ${cls}">${pct}% · ${label}</span>`;
+    });
+
+    // Anomalia
+    document.querySelectorAll(`.tele-anomalia[data-id="${id}"]`).forEach((el) => {
+      if (pred.anomaly) {
+        const reason = pred.reason ? pred.reason.replace(/"/g, "&quot;") : "Possível anomalia";
+        el.innerHTML = `<span class="anomaly-yes" title="${reason}"><i class="bi bi-exclamation-triangle-fill"></i> Anomalia</span>`;
+      } else {
+        el.innerHTML = `<span class="anomaly-no"><i class="bi bi-check-circle-fill"></i></span>`;
+      }
+    });
+  }
+
+  // ── Fetch combinado: telemetria + predição em paralelo ──────────────────────
+
+  const teleCache = {};
+  const predCache = {};
+
+  function fetchDeviceData(ids) {
+    ids.forEach((id) => {
+      // Telemetria
+      if (teleCache[id] !== undefined) {
+        preencherCelulasTelemetria(id, teleCache[id]);
+      } else {
+        carregarTelemetria(id).then(({ features }) => {
+          teleCache[id] = features;
+          preencherCelulasTelemetria(id, features);
+        });
+      }
+      // Predição
+      if (predCache[id] !== undefined) {
+        preencherCelulasPredicao(id, predCache[id]);
+      } else {
+        carregarPredicao(id).then((pred) => {
+          predCache[id] = pred;
+          preencherCelulasPredicao(id, pred);
+        });
+      }
     });
   }
 
   // ── Chart.js: Alarmes por Criticidade ──────────────────────────────────────
+
   const ctx = document.getElementById("chartCrit");
   if (ctx && window.DASH) {
     new Chart(ctx, {
@@ -159,7 +233,6 @@
   const ALARMES        = window.ALARMES || [];
   const ALARMES_PG_SZ  = 10;
   let   alarmesPagina  = 1;
-  const teleCache      = {};   // cache: dispositivoId → features (evita re-fetch ao trocar página)
 
   const CRIT_LABELS = { C:"Crítica", A:"Alta", M:"Média", B:"Baixa", I:"Info" };
 
@@ -178,6 +251,8 @@
         <td><code class="tag-code">${a.tag || "—"}</code></td>
         <td class="text-sm td-alarme" title="${a.alarme_desc || ""}">${a.alarme_desc || "—"}</td>
         <td class="text-muted text-sm text-nowrap">${a.tempo || "—"}</td>
+        <td class="text-center tele-risco" data-id="${id}"><span class="spinner"></span></td>
+        <td class="text-center tele-anomalia" data-id="${id}"><span class="spinner"></span></td>
         <td class="text-center tele-temp" data-id="${id}"><span class="spinner"></span></td>
         <td class="text-center">${trat}</td>
         <td class="text-center">
@@ -240,7 +315,7 @@
 
     tbody.innerHTML = slice.length
       ? slice.map(buildAlarmeRow).join("")
-      : `<tr><td colspan="8" class="text-center text-muted py-4">Nenhum alarme ativo.</td></tr>`;
+      : `<tr><td colspan="10" class="text-center text-muted py-4">Nenhum alarme ativo.</td></tr>`;
 
     if (pag) pag.innerHTML = total > ALARMES_PG_SZ
       ? buildPaginacao(pagina, total, ALARMES_PG_SZ, "irPaginaAlarmes")
@@ -252,18 +327,9 @@
 
     if (count) count.textContent = total;
 
-    // Telemetria: usa cache ou busca para IDs da página atual
+    // Data fetching for visible rows
     const ids = [...new Set(slice.map((a) => String(a.dispositivo_id)))];
-    ids.forEach((id) => {
-      if (teleCache[id] !== undefined) {
-        preencherCelulasTelemetria(id, teleCache[id]);
-      } else {
-        carregarTelemetria(id).then(({ features }) => {
-          teleCache[id] = features;
-          preencherCelulasTelemetria(id, features);
-        });
-      }
-    });
+    fetchDeviceData(ids);
   }
 
   window.irPaginaAlarmes = function (p) {
@@ -304,7 +370,6 @@
     const inicio = (pagina - 1) * PAGE_SIZE;
     const fim    = Math.min(inicio + PAGE_SIZE, total);
 
-    // Sem resultados
     if (total === 0) {
       grid.innerHTML = `<div class="col-12 text-muted text-center py-3">Nenhuma unidade encontrada.</div>`;
       pag.innerHTML  = "";
@@ -313,7 +378,6 @@
       return;
     }
 
-    // Cards
     grid.innerHTML = filtrado.slice(inicio, fim).map((u) => {
       const id       = u.lojaId || "";
       const nome     = (u.lojaNm || u.nome || "Sem nome").trim();
@@ -335,10 +399,8 @@
         </div>`;
     }).join("");
 
-    // Paginação
     pag.innerHTML = buildPaginacao(pagina, total, PAGE_SIZE, "irPagina");
 
-    // Indicador "x–y de N"
     const count = document.getElementById("unid-count");
     if (count) {
       count.textContent = total < UNIDADES.length
@@ -364,7 +426,6 @@
 
   // ── Modal: Abrir Chamado ────────────────────────────────────────────────────
 
-  // Estado do modal
   let _chamadoPayload = null;
 
   window.abrirModalChamado = function (btn) {
