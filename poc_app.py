@@ -186,36 +186,42 @@ def api_unidade_detalhe(loja_id):
 
 @app.route("/api/telemetria/<int:dispositivo_id>")
 def api_telemetria(dispositivo_id):
-    """Retorna features de temperatura processadas para um dispositivo."""
+    """Retorna features de temperatura e series completas (temp, degelo, setpoint, onoff)."""
     try:
         raw = buscar_telemetria(dispositivo_id)
         datasets = raw.get("datasets", [])
         if not datasets:
             return jsonify({"status": "ok", "dispositivo_id": dispositivo_id, "features": {}})
 
-        # Prefere "Temperatura Ambiente"; cai no primeiro dataset disponível
-        ds = next(
-            (d for d in datasets if "temperatura ambiente" in d.get("label", "").lower()),
-            datasets[0],
-        )
-        # A API usa "values", não "data"
-        valores = [v for v in ds.get("values", ds.get("data", [])) if v is not None]
-        if not valores:
-            return jsonify({"status": "ok", "dispositivo_id": dispositivo_id, "features": {}})
+        from src.api_preprocessor import _extrair_features_telemetria, _extrair_series_telemetria
 
-        arr = np.array(valores, dtype=float)
-        tendencia = float(np.polyfit(range(len(arr)), arr, 1)[0]) if len(arr) > 1 else 0.0
+        features = _extrair_features_telemetria(raw)
+        series = _extrair_series_telemetria(raw)
 
-        features = {
-            "temp_media":     round(float(arr.mean()), 1),
-            "temp_maxima":    round(float(arr.max()), 1),
-            "temp_minima":    round(float(arr.min()), 1),
-            "temp_amplitude": round(float(arr.max() - arr.min()), 1),
-            "temp_tendencia": round(tendencia, 3),
-            "labels":         raw.get("labels", []),
-            "valores":        valores[-48:],  # últimas 48 leituras para o gráfico
-        }
-        return jsonify({"status": "ok", "dispositivo_id": dispositivo_id, "features": features})
+        temp = series.get("temp", [])
+        arr = np.array(temp, dtype=float) if temp else np.array([])
+
+        return jsonify({
+            "status": "ok",
+            "dispositivo_id": dispositivo_id,
+            "features": {
+                "temp_media":         round(float(features.get("temp_media", 0)), 1),
+                "temp_maxima":        round(float(features.get("temp_maxima", 0)), 1),
+                "temp_minima":        round(float(features.get("temp_minima", 0)), 1),
+                "temp_amplitude":     round(float(features.get("temp_amplitude", 0)), 1),
+                "temp_tendencia":     round(float(features.get("temp_tendencia", 0)), 3),
+                "temp_acima_setpoint": round(float(features.get("temp_acima_setpoint", 0)), 3),
+                "degelo_fracao":      round(float(features.get("degelo_fracao", 0)), 3),
+                "onoff_fracao_ligado": round(float(features.get("onoff_fracao_ligado", 0)), 3),
+            },
+            "series": {
+                "temp":     temp[-96:] if len(temp) > 96 else temp,
+                "degelo":   series.get("degelo", [])[-96:],
+                "setpoint": series.get("setpoint", [])[-96:],
+                "onoff":    series.get("onoff", [])[-96:],
+            },
+            "labels": raw.get("labels", []),
+        })
     except Exception as e:
         return jsonify({"status": "erro", "mensagem": str(e)}), 500
 

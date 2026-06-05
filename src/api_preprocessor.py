@@ -5,11 +5,8 @@ import pandas as pd
 from datetime import datetime
 from psycopg2.extras import execute_values
 from src.db import get_connection
-
-CRITICIDADE_SCORE = {"C": 4, "A": 3, "M": 2, "B": 1, "I": 0}
-
-# Criticidade C ou A → falha confirmada para fins de label
-CRITICIDADE_FALHA = {"C", "A"}
+from src.config import CRITICIDADE_SCORE, CRITICIDADE_FALHA, SERIES_MAP
+from src.features import extrair_features_janela
 
 
 def _parse_tempo_minutos(tempo_str: str | None) -> int:
@@ -28,30 +25,50 @@ def _parse_tempo_minutos(tempo_str: str | None) -> int:
     return total
 
 
-def _extrair_features_telemetria(telemetria: dict) -> dict:
+def _extrair_series_telemetria(telemetria: dict) -> dict:
     datasets = telemetria.get("datasets", [])
     if not datasets:
         return {}
+    series = {}
+    for ds in datasets:
+        label = ds.get("label", "")
+        values = ds.get("values", ds.get("data", []))
+        if label in SERIES_MAP:
+            series[SERIES_MAP[label]] = [v for v in values if v is not None]
+    return series
 
-    # A API usa "values"; prefere "Temperatura Ambiente"
-    ds = next(
-        (d for d in datasets if "temperatura ambiente" in d.get("label", "").lower()),
-        datasets[0],
-    )
-    valores = [v for v in ds.get("values", ds.get("data", [])) if v is not None]
-    if not valores:
+
+def _extrair_features_telemetria(telemetria: dict) -> dict:
+    series = _extrair_series_telemetria(telemetria)
+    if not series.get("temp"):
         return {}
 
-    arr = np.array(valores, dtype=float)
+    temp = series.get("temp", [])
+    degelo = series.get("degelo", [])
+    setpoint = series.get("setpoint", [])
+    onoff = series.get("onoff", [])
+
+    features = extrair_features_janela(temp, degelo, setpoint, onoff)
+    if features is None:
+        return {}
+
+    arr = np.array(temp, dtype=float)
     tendencia = float(np.polyfit(range(len(arr)), arr, 1)[0]) if len(arr) > 1 else 0.0
 
+    features["temp_tendencia"] = tendencia
+
     return {
-        "temp_media": float(arr.mean()),
-        "temp_maxima": float(arr.max()),
-        "temp_minima": float(arr.min()),
-        "temp_amplitude": float(arr.max() - arr.min()),
-        "temp_volatilidade": float(arr.std()),
+        "temp_media": features.get("temp_mean", 0.0),
+        "temp_maxima": features.get("temp_max", 0.0),
+        "temp_minima": features.get("temp_min", 0.0),
+        "temp_amplitude": features.get("temp_amplitude", 0.0),
+        "temp_volatilidade": features.get("temp_std", 0.0),
         "temp_tendencia": tendencia,
+        "temp_acima_setpoint": features.get("temp_acima_setpoint", 0.0),
+        "degelo_fracao": features.get("degelo_fracao", 0.0),
+        "onoff_fracao_ligado": features.get("onoff_fracao_ligado", 0.0),
+        "degelo_num_ciclos": features.get("degelo_num_ciclos", 0),
+        "onoff_num_ciclos": features.get("onoff_num_ciclos", 0),
     }
 
 
