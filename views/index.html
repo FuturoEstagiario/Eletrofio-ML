@@ -40,8 +40,7 @@
   </nav>
 
   <div class="sidebar-footer">
-    <i class="bi bi-circle-fill text-success" style="font-size:.55rem"></i>
-    <span>API conectada</span>
+    <span id="api-status-label"><i class="bi bi-circle-fill text-secondary" style="font-size:.55rem"></i> Verificando...</span>
     <!-- botão fechar — visível só no mobile -->
     <button class="sidebar-close-mobile" onclick="closeMobileSidebar()" title="Fechar">
       <i class="bi bi-x-lg"></i>
@@ -85,7 +84,7 @@
     {% endif %}
 
     <!-- ── KPI Cards ─────────────────────────────────────────── -->
-    <section id="section-kpis" class="mb-4">
+    <section id="section-kpis" class="mb-4 anim-fade-in-up">
       <div class="kpi-grid">
 
         <div class="kpi-card kpi-total">
@@ -124,7 +123,7 @@
     </section>
 
     <!-- ── Gráfico + Top Lojas ───────────────────────────────── -->
-    <section class="row g-3 mb-4">
+    <section class="row g-3 mb-4 anim-fade-in-up" style="animation-delay:.1s">
       <div class="col-12 col-lg-5">
         <div class="card-panel">
           <div class="panel-header">
@@ -179,7 +178,7 @@
     </section>
 
     <!-- ── Tabela de Alarmes ─────────────────────────────────── -->
-    <section id="section-alarmes" class="mb-4">
+    <section id="section-alarmes" class="mb-4 anim-fade-in-up" style="animation-delay:.2s">
       <div class="card-panel">
         <div class="panel-header">
           <div class="d-flex align-items-center gap-2">
@@ -198,6 +197,8 @@
                 <th>Tag</th>
                 <th>Alarme</th>
                 <th>Tempo</th>
+                <th class="text-center">Risco</th>
+                <th class="text-center">Anomalia</th>
                 <th class="text-center">Temperatura</th>
                 <th class="text-center">Tratativa</th>
                 <th class="text-center">Ação</th>
@@ -216,7 +217,7 @@
 
     <!-- ── Unidades ──────────────────────────────────────────── -->
     {% if unidades %}
-    <section id="section-unidades" class="mb-5">
+    <section id="section-unidades" class="mb-5 anim-fade-in-up" style="animation-delay:.3s">
       <div class="card-panel">
         <div class="panel-header flex-wrap gap-2">
           <div class="d-flex align-items-center gap-2">
@@ -247,6 +248,9 @@
 
   </main>
 </div><!-- /main-wrapper -->
+
+<!-- ══ Toast Container ════════════════════════════════════════════ -->
+<div class="toast-container" id="toastContainer"></div>
 
 <!-- ══ Modal Chamado ══════════════════════════════════════════════ -->
 <div class="modal fade" id="modalChamado" tabindex="-1" aria-hidden="true">

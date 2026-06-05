@@ -1,13 +1,13 @@
-# -*- coding: utf-8 -*-
 from src.api_client import abrir_chamado
-
-THRESHOLD_RISCO = 0.75
+from src.config import THRESHOLD_RISCO
+from src.models import OneClassSVMModel
 
 
 def avaliar_e_abrir_chamados(
     df_leituras,
     modelo_predict_proba,
     feature_cols: list[str],
+    modelo_oneclass: OneClassSVMModel = None,
 ) -> list[dict]:
     chamados_abertos = []
 
@@ -22,13 +22,23 @@ def avaliar_e_abrir_chamados(
         except Exception:
             proba = 0.0
 
+        anomalia_msg = None
+        if modelo_oneclass is not None and hasattr(modelo_oneclass, 'gerar_motivo'):
+            try:
+                features_dict = {c: row.get(c, 0.0) for c in feats_disponiveis}
+                pred_raw = modelo_oneclass.predict_raw(X)[0]
+                if pred_raw == -1:
+                    anomalia_msg = modelo_oneclass.gerar_motivo(features_dict, 1)
+            except Exception:
+                pass
+
         criticidade = row.get("criticidade", "I")
         sem_tratativa = bool(row.get("sem_tratativa", 0))
 
-        deve_abrir = (proba >= THRESHOLD_RISCO) or (criticidade == "C" and sem_tratativa)
+        deve_abrir = (proba >= THRESHOLD_RISCO) or (criticidade == "C" and sem_tratativa) or (anomalia_msg is not None)
 
         if deve_abrir:
-            motivo = _montar_motivo(row, proba)
+            motivo = _montar_motivo(row, proba, anomalia_msg)
             try:
                 resposta = abrir_chamado(
                     loja_id=int(row["loja_id"]),
@@ -51,16 +61,19 @@ def avaliar_e_abrir_chamados(
     return chamados_abertos
 
 
-def _montar_motivo(row, proba: float) -> str:
+def _montar_motivo(row, proba: float, anomalia_msg: str = None) -> str:
     partes = [f"Risco de falha previsto pelo modelo: {proba:.0%}"]
+
+    if anomalia_msg:
+        partes.append(f"Anomalia detectada: {anomalia_msg}")
 
     temp_max = row.get("temp_maxima")
     if temp_max and temp_max == temp_max:
-        partes.append(f"temperatura maxima registrada {temp_max:.1f}°C")
+        partes.append(f"temperatura maxima registrada {temp_max:.1f}C")
 
     tendencia = row.get("temp_tendencia")
     if tendencia and tendencia == tendencia and tendencia > 0:
-        partes.append(f"tendencia de alta de {tendencia:.2f}°C/leitura")
+        partes.append(f"tendencia de alta de {tendencia:.2f}C/leitura")
 
     alarme = row.get("alarme_desc", "")
     if alarme:

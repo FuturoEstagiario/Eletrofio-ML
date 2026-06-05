@@ -2,11 +2,12 @@
 EletroFrio - Carregamento e Pré-processamento de Dados
 =======================================================
 Responsável por:
-  1. Ler dados do SQLite
-  2. Engenharia de features (diferenciais, razões físicas)
-  3. Divisão treino/teste estratificada
-  4. Balanceamento via SMOTE (para lidar com desequilíbrio de classes)
-  5. Normalização (StandardScaler)
+  1. Ler dados do SQLite (dados sintéticos)
+  2. Ler dados de janelas do Parquet (dados reais do SVM)
+  3. Engenharia de features (diferenciais, razões físicas)
+  4. Divisão treino/teste estratificada
+  5. Balanceamento via SMOTE
+  6. Normalização (StandardScaler)
 """
 
 import numpy as np
@@ -15,6 +16,8 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from imblearn.over_sampling import SMOTE
 from src.db import get_connection
+from src.config import DATA_DIR
+from src.features import get_feature_columns
 
 # ── Features brutas ──────────────────────────────────────────────────────────
 
@@ -140,4 +143,45 @@ def carregar_e_preparar(
         "scaler":        scaler,
         "feature_names": ENGINEERED_FEATURES,
         "df_original":   df,
+    }
+
+
+# ── Carregamento baseado em janelas (dados reais do SVM) ────────────────────
+
+def carregar_janelas_features() -> pd.DataFrame:
+    df_feat = pd.read_parquet(f"{DATA_DIR}/features.parquet")
+    print(f"  Janelas carregadas: {len(df_feat)} amostras, {len(df_feat.columns)} colunas")
+    return df_feat
+
+
+def preparar_dados_janela(
+    df_feat: pd.DataFrame = None,
+    test_size: float = 0.2,
+    seed: int = 42,
+) -> dict:
+    if df_feat is None:
+        df_feat = carregar_janelas_features()
+
+    feature_cols = get_feature_columns(df_feat)
+    print(f"  Features usadas: {len(feature_cols)}")
+
+    X = np.nan_to_num(df_feat[feature_cols].values, nan=0.0)
+    y = df_feat["anomalo"].values.astype(int)
+
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=test_size, random_state=seed, stratify=y,
+    )
+
+    scaler = StandardScaler()
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_test_scaled = scaler.transform(X_test)
+
+    return {
+        "X_train": X_train_scaled,
+        "X_test": X_test_scaled,
+        "y_train": y_train,
+        "y_test": y_test,
+        "scaler": scaler,
+        "feature_names": feature_cols,
+        "df_original": df_feat,
     }

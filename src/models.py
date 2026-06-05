@@ -1,10 +1,11 @@
 """
 EletroFrio - Modelos de Machine Learning
 =========================================
-Implementa dois classificadores para detecção de falhas em compressores:
+Implementa três classificadores para detecção de falhas em compressores:
 
-  1. SVM  – Support Vector Machine com kernel RBF e busca de hiperparâmetros
-  2. RF   – Random Forest com busca por GridSearchCV
+  1. SVM         – Support Vector Machine com kernel RBF e busca de hiperparâmetros
+  2. RF          – Random Forest com busca por GridSearchCV
+  3. OneClassSVM – Detecção de anomalia não supervisionada (treinado só com dados normais)
 
 Cada modelo expõe a mesma interface:
     treinar(X_train, y_train) → self
@@ -18,9 +19,11 @@ import numpy as np
 import joblib
 import os
 import time
-from sklearn.svm import SVC
+import itertools
+from sklearn.svm import SVC, OneClassSVM as SkOneClassSVM
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import GridSearchCV, StratifiedKFold
+from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import GridSearchCV, StratifiedKFold, train_test_split
 from sklearn.metrics import (
     accuracy_score, precision_score, recall_score,
     f1_score, roc_auc_score, confusion_matrix,
@@ -196,6 +199,143 @@ class RandomForestModel(BaseModel):
             "importancia": imp,
         }).sort_values("importancia", ascending=False).reset_index(drop=True)
         return df
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# One-Class SVM — Detecção de Anomalia Não Supervisionada
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class OneClassSVMModel(BaseModel):
+    """
+    One-Class SVM para detecção de anomalias.
+    Treinado apenas com dados Normais; detecta desvios como anomalias.
+
+    OneClassSVM retorna 1 (normal) ou -1 (anomalia).
+    Internamente mapeamos: 1 → 0 (normal), -1 → 1 (falha) para compatibilidade.
+    """
+
+    name = "OneClassSVM"
+
+    def __init__(self):
+        self.model = None
+        self.scaler = None
+        self.feature_cols = None
+
+    def treinar(
+        self,
+        X_train: np.ndarray,
+        y_train: np.ndarray = None,
+        busca_hiperpar: bool = True,
+    ) -> "OneClassSVMModel":
+        """
+        Treina OneClassSVM apenas com amostras Normais.
+        Se y_train for fornecido, filtra apenas classe 0 (normal).
+        """
+        print(f"\n  Treinando {self.name}...")
+        t0 = time.time()
+
+        if y_train is not None:
+            X_train = X_train[y_train == 0]
+
+        print(f"    Amostras normais para treino: {len(X_train)}")
+
+        self.scaler = StandardScaler()
+        X_scaled = self.scaler.fit_transform(X_train)
+
+        if busca_hiperpar:
+            print("    Executando GridSearch (nu x gamma, 3-fold CV)...")
+            X_tr, X_val = train_test_split(X_scaled, test_size=0.2, random_state=42)
+            nu_values = [0.01, 0.05, 0.1, 0.2]
+            gamma_values = ["scale", "auto", 0.1, 0.01, 0.001]
+
+            best_f1 = -1
+            best_params = None
+            best_model = None
+
+            for nu, gamma in itertools.product(nu_values, gamma_values):
+                m = SkOneClassSVM(kernel="rbf", nu=nu, gamma=gamma)
+                m.fit(X_tr)
+                y_pred = m.predict(X_val)
+                y_true_val = np.ones(len(X_val))
+                vp = int(np.sum((y_pred == -1) & (y_true_val == -1)))
+                fp = int(np.sum((y_pred == -1) & (y_true_val == 1)))
+                fn = int(np.sum((y_pred == 1) & (y_true_val == -1)))
+                prec = vp / (vp + fp) if (vp + fp) > 0 else 0
+                rec = vp / (vp + fn) if (vp + fn) > 0 else 0
+                f1 = 2 * prec * rec / (prec + rec) if (prec + rec) > 0 else 0
+                print(f"      nu={nu}, gamma={str(gamma):>6s}: F1={f1:.4f}")
+                if f1 > best_f1:
+                    best_f1 = f1
+                    best_params = (nu, gamma)
+                    best_model = m
+
+            self.model = best_model
+            print(f"    Melhores hiperparams: nu={best_params[0]}, gamma={best_params[1]} (F1={best_f1:.4f})")
+        else:
+            self.model = SkOneClassSVM(kernel="rbf", nu=0.05, gamma=0.01)
+            self.model.fit(X_scaled)
+
+        print(f"    ⏱  Tempo de treino: {time.time() - t0:.1f}s")
+        return self
+
+    def predict(self, X: np.ndarray) -> np.ndarray:
+        X_s = self.scaler.transform(X)
+        y_pred = self.model.predict(X_s)
+        return np.where(y_pred == 1, 0, 1)
+
+    def predict_proba(self, X: np.ndarray) -> np.ndarray:
+        X_s = self.scaler.transform(X)
+        scores = self.model.decision_function(X_s)
+        return 1 / (1 + np.exp(-scores))
+
+    def predict_raw(self, X: np.ndarray) -> np.ndarray:
+        X_s = self.scaler.transform(X)
+        return self.model.predict(X_s)
+
+    def decision_function(self, X: np.ndarray) -> np.ndarray:
+        X_s = self.scaler.transform(X)
+        return self.model.decision_function(X_s)
+
+    def gerar_motivo(self, features: dict, resultado: int) -> str:
+        if resultado == 0:
+            return "Operacao dentro dos padroes normais"
+
+        motivos = []
+        if features.get("temp_mean", 0) > 5:
+            motivos.append(f"temperatura media elevada ({features['temp_mean']:.1f}C)")
+        if features.get("temp_std", 0) > 3:
+            motivos.append(f"oscilacao alta na temperatura (std={features['temp_std']:.1f})")
+        if features.get("temp_acima_setpoint", 0) > 0.5:
+            motivos.append("tempo prolongado acima do setpoint")
+        if features.get("degelo_fracao", 0) > 0.3:
+            motivos.append(f"tempo excessivo em degelo ({features['degelo_fracao']:.1%} do periodo)")
+        if features.get("onoff_fracao_ligado", 0) < 0.2:
+            motivos.append("compressor com baixo tempo de operacao")
+
+        if motivos:
+            return "Anomalia detectada: " + "; ".join(motivos)
+        return "Anomalia detectada: padrao atipico nos sensores"
+
+    def salvar(self, path_prefix: str = None) -> None:
+        if path_prefix is None:
+            path_prefix = "models"
+        os.makedirs(path_prefix, exist_ok=True)
+        joblib.dump(self.model, os.path.join(path_prefix, "svm_anomalia.pkl"))
+        joblib.dump(self.scaler, os.path.join(path_prefix, "scaler.pkl"))
+        if self.feature_cols:
+            joblib.dump(self.feature_cols, os.path.join(path_prefix, "feature_cols.pkl"))
+        print(f"  ✓ Modelo {self.name} salvo em {path_prefix}/")
+
+    @classmethod
+    def carregar(cls, path_prefix: str = "models"):
+        obj = cls.__new__(cls)
+        obj.model = joblib.load(os.path.join(path_prefix, "svm_anomalia.pkl"))
+        obj.scaler = joblib.load(os.path.join(path_prefix, "scaler.pkl"))
+        try:
+            obj.feature_cols = joblib.load(os.path.join(path_prefix, "feature_cols.pkl"))
+        except (FileNotFoundError, Exception):
+            obj.feature_cols = None
+        return obj
 
 
 # ── Facilidade de uso ────────────────────────────────────────────────────────
