@@ -65,6 +65,25 @@
     }
   });
 
+  // ── Toast Notifications ─────────────────────────────────────────────────────
+
+  const toastContainer = document.getElementById("toastContainer");
+
+  window.mostrarToast = function (message, type, duration) {
+    if (!toastContainer) return;
+    type = type || "info";
+    duration = duration || 4000;
+    const icons = { success: "bi-check-circle-fill", error: "bi-x-circle-fill", info: "bi-info-circle-fill" };
+    const el = document.createElement("div");
+    el.className = `toast-item toast-${type}`;
+    el.innerHTML = `<i class="bi ${icons[type] || icons.info}"></i><span>${message}</span>`;
+    toastContainer.appendChild(el);
+    setTimeout(() => {
+      el.classList.add("toast-leaving");
+      setTimeout(() => el.remove(), 250);
+    }, duration);
+  };
+
   // ── Health Check ────────────────────────────────────────────────────────────
 
   async function verificarSaude() {
@@ -251,9 +270,9 @@
         <td><code class="tag-code">${a.tag || "—"}</code></td>
         <td class="text-sm td-alarme" title="${a.alarme_desc || ""}">${a.alarme_desc || "—"}</td>
         <td class="text-muted text-sm text-nowrap">${a.tempo || "—"}</td>
-        <td class="text-center tele-risco" data-id="${id}"><span class="spinner"></span></td>
-        <td class="text-center tele-anomalia" data-id="${id}"><span class="spinner"></span></td>
-        <td class="text-center tele-temp" data-id="${id}"><span class="spinner"></span></td>
+        <td class="text-center tele-risco" data-id="${id}"><span class="shimmer"></span></td>
+        <td class="text-center tele-anomalia" data-id="${id}"><span class="shimmer"></span></td>
+        <td class="text-center tele-temp" data-id="${id}"><span class="shimmer"></span></td>
         <td class="text-center">${trat}</td>
         <td class="text-center">
           <button class="btn-action"
@@ -494,6 +513,7 @@
             </div>
           </div>`;
         btnConf.innerHTML = '<i class="bi bi-send-fill"></i> Confirmar Chamado';
+        mostrarToast(`Chamado aberto para ${_chamadoPayload.loja_nome}`, "success", 5000);
       } else {
         feedback.innerHTML = `
           <div class="modal-feedback-err">
@@ -502,6 +522,7 @@
           </div>`;
         btnConf.disabled = false;
         btnConf.innerHTML = '<i class="bi bi-send-fill"></i> Confirmar Chamado';
+        mostrarToast(json.mensagem || "Erro ao abrir chamado", "error", 5000);
       }
     } catch (err) {
       feedback.innerHTML = `
@@ -511,6 +532,7 @@
         </div>`;
       btnConf.disabled = false;
       btnConf.innerHTML = '<i class="bi bi-send-fill"></i> Confirmar Chamado';
+      mostrarToast("Erro de rede ao abrir chamado", "error", 5000);
     }
   };
 
