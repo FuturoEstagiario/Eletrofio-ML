@@ -1,16 +1,12 @@
-# -*- coding: utf-8 -*-
 import requests
 import urllib3
+from src.config import API_BASE, API_TIMEOUT, API_EQUIPE
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-BASE_URL = "https://credenciamento.eletrofrio.com.br:5900/galileo/api/api_hackathon"
-TIMEOUT = 300
-EQUIPE = "EletroFrio ML"
-
 
 def _get(params: dict) -> dict | list:
-    resp = requests.get(BASE_URL, params=params, timeout=TIMEOUT, verify=False)
+    resp = requests.get(API_BASE, params=params, timeout=API_TIMEOUT, verify=False)
     resp.raise_for_status()
     return resp.json()
 
@@ -36,7 +32,7 @@ def abrir_chamado(
     requer_tecnico: bool = True,
 ) -> dict:
     payload = {
-        "equipe": EQUIPE,
+        "equipe": API_EQUIPE,
         "lojaId": loja_id,
         "lojaNome": loja_nome,
         "dispositivoId": dispositivo_id,
@@ -45,10 +41,10 @@ def abrir_chamado(
         "requerTecnico": requer_tecnico,
     }
     resp = requests.post(
-        BASE_URL,
+        API_BASE,
         params={"route": "abrir-chamado"},
         json=payload,
-        timeout=TIMEOUT,
+        timeout=API_TIMEOUT,
         verify=False,
     )
     resp.raise_for_status()

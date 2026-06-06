@@ -5,11 +5,37 @@ import pandas as pd
 from datetime import datetime
 from psycopg2.extras import execute_values
 from src.db import get_connection
+from src.config import CRITICIDADE_SCORE, CRITICIDADE_FALHA
+from src.features import extrair_features_janela
 
-CRITICIDADE_SCORE = {"C": 4, "A": 3, "M": 2, "B": 1, "I": 0}
+_TEMP_LABELS = [
+    "Temperatura Ambiente",
+    "L1 - Temperatura da sucção",
+    "L1 - Temperatura de Evaporação",
+    "L1 - Temperatura de Condensação",
+    "Temperatura de Saída do Glicol",
+    "Temperatura do Ar Externo",
+    "Temperatura de Degelo",
+    "Temperatura Subresfriamento",
+]
 
-# Criticidade C ou A → falha confirmada para fins de label
-CRITICIDADE_FALHA = {"C", "A"}
+_SETPOINT_LABELS = [
+    "Setpoint Ambiente",
+    "L1 - Setpoint Sucção",
+    "L1 - Setpoint Condensação",
+]
+
+_ONOFF_LABELS = [
+    "Estado de Funcionamento ON/OFF",
+    "L1 - Status Compressor 1",
+    "Status Solenoide",
+    "Acionamento Bomba 1",
+]
+
+_DEGELO_LABELS = [
+    "Status Degelo",
+    "Degelo Glicol",
+]
 
 
 def _parse_tempo_minutos(tempo_str: str | None) -> int:
@@ -28,30 +54,64 @@ def _parse_tempo_minutos(tempo_str: str | None) -> int:
     return total
 
 
-def _extrair_features_telemetria(telemetria: dict) -> dict:
+def _extrair_series_telemetria(telemetria: dict) -> dict:
     datasets = telemetria.get("datasets", [])
     if not datasets:
         return {}
 
-    # A API usa "values"; prefere "Temperatura Ambiente"
-    ds = next(
-        (d for d in datasets if "temperatura ambiente" in d.get("label", "").lower()),
-        datasets[0],
-    )
-    valores = [v for v in ds.get("values", ds.get("data", [])) if v is not None]
-    if not valores:
+    found = {}
+    for lbl, label_list in [
+        ("temp", _TEMP_LABELS),
+        ("setpoint", _SETPOINT_LABELS),
+        ("onoff", _ONOFF_LABELS),
+        ("degelo", _DEGELO_LABELS),
+    ]:
+        for candidate in label_list:
+            ds = next(
+                (d for d in datasets if d.get("label", "") == candidate),
+                None,
+            )
+            if ds is not None:
+                values = ds.get("values", ds.get("data", []))
+                cleaned = [v for v in values if v is not None]
+                if cleaned:
+                    found[lbl] = cleaned
+                    break
+
+    return found
+
+
+def _extrair_features_telemetria(telemetria: dict) -> dict:
+    series = _extrair_series_telemetria(telemetria)
+    if not series.get("temp"):
         return {}
 
-    arr = np.array(valores, dtype=float)
+    temp = series.get("temp", [])
+    degelo = series.get("degelo", [])
+    setpoint = series.get("setpoint", [])
+    onoff = series.get("onoff", [])
+
+    features = extrair_features_janela(temp, degelo, setpoint, onoff)
+    if features is None:
+        return {}
+
+    arr = np.array(temp, dtype=float)
     tendencia = float(np.polyfit(range(len(arr)), arr, 1)[0]) if len(arr) > 1 else 0.0
 
+    features["temp_tendencia"] = tendencia
+
     return {
-        "temp_media": float(arr.mean()),
-        "temp_maxima": float(arr.max()),
-        "temp_minima": float(arr.min()),
-        "temp_amplitude": float(arr.max() - arr.min()),
-        "temp_volatilidade": float(arr.std()),
+        "temp_media": features.get("temp_mean", 0.0),
+        "temp_maxima": features.get("temp_max", 0.0),
+        "temp_minima": features.get("temp_min", 0.0),
+        "temp_amplitude": features.get("temp_amplitude", 0.0),
+        "temp_volatilidade": features.get("temp_std", 0.0),
         "temp_tendencia": tendencia,
+        "temp_acima_setpoint": features.get("temp_acima_setpoint", 0.0),
+        "degelo_fracao": features.get("degelo_fracao", 0.0),
+        "onoff_fracao_ligado": features.get("onoff_fracao_ligado", 0.0),
+        "degelo_num_ciclos": features.get("degelo_num_ciclos", 0),
+        "onoff_num_ciclos": features.get("onoff_num_ciclos", 0),
     }
 
 

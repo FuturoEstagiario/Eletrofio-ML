@@ -11,13 +11,16 @@ Orquestra todo o pipeline de ML:
   Etapa 5 → Treino do Random Forest (com GridSearchCV)
   Etapa 6 → Avaliação comparativa dos modelos
   Etapa 7 → Geração de relatório final e salvamento dos modelos
+  Etapa 8 → Pipeline de dados reais (OneClassSVM) via API
 
 Uso:
-    python main.py [--rapido] [--sem-busca] [--live]
+    python main.py [--rapido] [--sem-busca] [--live] [--real] [--relabel]
 
     --rapido    : usa dataset menor (500 registros/compressor)
     --sem-busca : pula GridSearchCV (mais rápido, mas sem otimização)
     --live      : consome endpoints reais da Eletrofrio e abre chamados
+    --real      : coleta dados reais da API e treina OneClassSVM
+    --relabel   : usa relabel estatístico em vez de timestamps dos alarmes
 """
 
 import os
@@ -32,15 +35,21 @@ import pandas as pd
 
 # ── Módulos do projeto ────────────────────────────────────────────────────────
 sys.path.insert(0, os.path.dirname(__file__))
-from src.data_generator import gerar_dataset, salvar_sqlite  # SQLite local para treino
+from src.config import DB_PATH, MODELS_DIR, REPORTS_DIR
+from src.data_generator import gerar_dataset, salvar_sqlite
 from src.preprocessor import carregar_e_preparar, engenharia_features, ENGINEERED_FEATURES
-from src.models import SVMModel, RandomForestModel, imprimir_metricas
+from src.preprocessor import preparar_dados_janela, carregar_janelas_features
+from src.models import SVMModel, RandomForestModel, OneClassSVMModel, imprimir_metricas
 from src.api_client import buscar_alarmes, buscar_unidades, buscar_telemetria
 from src.api_preprocessor import (
     processar_alarmes, enriquecer_com_telemetria,
     salvar_leituras_real, carregar_leituras_real,
 )
 from src.chamado_service import avaliar_e_abrir_chamados
+from src.data_collector import coletar_tudo
+from src.features import processar_todos, get_feature_columns
+from src.labeling import preparar_dados_com_labels, recalcular_labels
+from src.evaluator import grid_search, avaliar_modelo_salvo
 from src.visualizacoes import (
     plot_distribuicao_classes,
     plot_correlacao,
@@ -52,11 +61,6 @@ from src.visualizacoes import (
     plot_temperatura_timeline,
 )
 
-# ── Caminhos ─────────────────────────────────────────────────────────────────
-DB_PATH      = os.path.join("data", "eletrofrio.db")
-MODELS_DIR   = "models"
-REPORTS_DIR  = "reports"
-
 
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -65,7 +69,7 @@ def banner():
     print("\n" + sep)
     print("  ELETROFRIO")
     print("  Previsao de Falhas em Compressores de Refrigeracao")
-    print("  Machine Learning | SVM + Random Forest")
+    print("  Machine Learning | SVM + Random Forest + OneClassSVM")
     print("  Sistemas de Resfriamento para Supermercados")
     print(sep + "\n")
 
@@ -80,6 +84,10 @@ def parse_args():
                         help="Regenera o banco SQLite mesmo se ja existir")
     parser.add_argument("--live", action="store_true",
                         help="Consome endpoints reais da Eletrofrio e abre chamados automaticos")
+    parser.add_argument("--real", action="store_true",
+                        help="Coleta dados reais da API e treina OneClassSVM")
+    parser.add_argument("--relabel", action="store_true",
+                        help="Usa relabel estatistico em vez de timestamps dos alarmes")
     return parser.parse_args()
 
 
@@ -118,6 +126,58 @@ def salvar_relatorio(resultados: dict, tempo_total: float, args) -> str:
 # Pipeline live (endpoints reais)
 # ===============================================================
 
+def pipeline_real(args) -> None:
+    sep = "-" * 65
+    print("\n" + sep)
+    print("  ETAPA 8 -- Pipeline de Dados Reais (OneClassSVM)")
+    print(sep)
+
+    print("\n  [1/5] Coletando dados da API...")
+    df_telemetria, df_status, unidades_df, alarmes_df = coletar_tudo()
+
+    if df_telemetria.empty:
+        print("  [ERRO] Nenhum dado de telemetria coletado. Abortando pipeline real.")
+        return
+
+    print("\n  [2/5] Extraindo features por janelas...")
+    df_feat = processar_todos(df_telemetria)
+    df_feat.to_parquet("dados_coletados/features.parquet", index=False)
+    print(f"        {len(df_feat)} amostras, {len(df_feat.columns)} colunas")
+
+    print("\n  [3/5] Rotulando janelas...")
+    if args.relabel:
+        print("    Usando relabel estatistico (80th percentile)...")
+        df_normais, df_anomalos = recalcular_labels()
+    else:
+        print("    Usando timestamps dos alarmes...")
+        df_normais, df_anomalos = preparar_dados_com_labels()
+
+    df_feat = pd.read_parquet("dados_coletados/features.parquet")
+    feature_cols = get_feature_columns(df_feat)
+    print(f"    Features: {len(feature_cols)}")
+    print(f"    Normais: {len(df_normais)} | Anomalos: {len(df_anomalos)}")
+
+    print("\n  [4/5] Treinando OneClassSVM...")
+    ocsvm = OneClassSVMModel()
+    ocsvm.feature_cols = feature_cols
+    dados_janela = preparar_dados_janela(df_feat)
+    ocsvm.treinar(dados_janela["X_train"], dados_janela["y_train"], busca_hiperpar=not args.sem_busca)
+    met_ocsvm = ocsvm.avaliar(dados_janela["X_test"], dados_janela["y_test"])
+    imprimir_metricas("OneClassSVM", met_ocsvm)
+    ocsvm.salvar(MODELS_DIR)
+
+    print("\n  [5/5] Grid Search e avaliacao detalhada...")
+    if len(df_anomalos) > 0:
+        resultados_gs = grid_search(df_normais, df_anomalos, feature_cols)
+        resultados_gs.to_csv(f"{MODELS_DIR}/grid_search_results.csv", index=False)
+        print(f"    Resultados salvos em {MODELS_DIR}/grid_search_results.csv")
+
+    print("\n  [FIM] Pipeline de dados reais concluido.")
+    print(f"  Modelo OneClassSVM salvo em {MODELS_DIR}/")
+    print(f"  Para testar: python -c 'from src.models import OneClassSVMModel;")
+    print(f"    m = OneClassSVMModel.carregar(); print(m)'")
+
+
 def pipeline_live(rf_model) -> None:
     sep = "-" * 65
     print("\n" + sep)
@@ -141,10 +201,18 @@ def pipeline_live(rf_model) -> None:
         "temp_media", "temp_maxima", "temp_amplitude",
         "temp_volatilidade", "temp_tendencia",
     ]
+    try:
+        ocsvm = OneClassSVMModel.carregar(MODELS_DIR)
+        print("  Modelo OneClassSVM carregado para deteccao de anomalias.")
+    except Exception:
+        ocsvm = None
+        print("  OneClassSVM nao encontrado. Usando apenas RF.")
+
     chamados = avaliar_e_abrir_chamados(
         df_leituras=df_enriquecido,
         modelo_predict_proba=rf_model.predict_proba,
         feature_cols=feature_cols,
+        modelo_oneclass=ocsvm,
     )
 
     print(f"\n  [LIVE] {len(chamados)} chamado(s) aberto(s) automaticamente.")
@@ -160,6 +228,18 @@ def main():
     banner()
     args = parse_args()
     t_inicio = time.time()
+
+    if args.real:
+        pipeline_real(args)
+        tempo_total = time.time() - t_inicio
+        print("\n" + "=" * 65)
+        print("  [CONCLUIDO] PIPELINE REAL FINALIZADO COM SUCESSO")
+        print("=" * 65)
+        print(f"\n  Modelo OneClassSVM salvo em {MODELS_DIR}/")
+        print(f"  Para iniciar o dashboard: python poc_app.py")
+        print(f"\n  Tempo total: {tempo_total:.1f}s")
+        print("=" * 65 + "\n")
+        return
 
     registros = 500 if args.rapido else 2000
     busca = not args.sem_busca
@@ -246,7 +326,7 @@ def main():
     tempo_total = time.time() - t_inicio
     salvar_relatorio(resultados, tempo_total, args)
 
-    # -- Etapa 8 (opcional): Pipeline live com endpoints reais ---------------
+    # -- Etapa 9 (opcional): Pipeline live com endpoints reais ---------------
     if args.live:
         pipeline_live(rf)
 

@@ -26,7 +26,29 @@ import numpy as np
 from flask import Flask, jsonify, render_template, request
 from whitenoise import WhiteNoise
 from src.api_client import buscar_alarmes, buscar_unidades, buscar_telemetria, abrir_chamado
-from src.api_preprocessor import processar_alarmes
+from src.api_preprocessor import processar_alarmes, _extrair_features_telemetria
+
+# ── Carregamento de modelos (tolerante a falhas) ──────────────────────────
+_modelos = {"rf": None, "ocsvm": None}
+_modelos_carregados = False
+
+try:
+    from src.models import RandomForestModel, OneClassSVMModel
+    from src.config import MODELS_DIR
+    _modelos["rf"] = RandomForestModel.carregar(f"{MODELS_DIR}/rf_eletrofrio.pkl")
+    print("  [MODELO] Random Forest carregado.")
+    _modelos_carregados = True
+except Exception:
+    print("  [MODELO] Random Forest nao encontrado (treine com main.py primeiro).")
+
+try:
+    if _modelos["ocsvm"] is None:
+        _modelos["ocsvm"] = OneClassSVMModel.carregar(MODELS_DIR)
+    print("  [MODELO] OneClassSVM carregado.")
+    _modelos_carregados = True
+except Exception:
+    print("  [MODELO] OneClassSVM nao encontrado (use main.py --real para treinar).")
+
 
 app = Flask(__name__, template_folder="views", static_folder="views")
 app.wsgi_app = WhiteNoise(app.wsgi_app, root="views/", prefix="static")
@@ -147,7 +169,7 @@ def dashboard():
         chart_labels=chart_labels,
         chart_data=chart_data,
         chart_colors=chart_colors,
-        atualizado=datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+        atualizado=datetime.fromtimestamp(_cache["ts"]).strftime("%d/%m/%Y %H:%M:%S") if _cache["ts"] else "—",
         erros=erros,
     )
 
@@ -161,6 +183,27 @@ def api_alarmes():
         return jsonify({"status": "ok", "total": len(dados), "dados": dados})
     except Exception as e:
         return jsonify({"status": "erro", "mensagem": str(e)}), 500
+
+
+@app.route("/api/health")
+def api_health():
+    """Verifica se a API da Eletrofrio está acessível e se os modelos estão carregados."""
+    api_ok = False
+    try:
+        buscar_alarmes()
+        api_ok = True
+    except Exception:
+        pass
+    return jsonify({
+        "status": "ok",
+        "api": api_ok,
+        "modelos": {
+            "rf": _modelos["rf"] is not None,
+            "ocsvm": _modelos["ocsvm"] is not None,
+        },
+        "modelos_carregados": _modelos_carregados,
+        "cache_ts": _cache["ts"],
+    })
 
 
 @app.route("/api/unidades")
@@ -186,36 +229,45 @@ def api_unidade_detalhe(loja_id):
 
 @app.route("/api/telemetria/<int:dispositivo_id>")
 def api_telemetria(dispositivo_id):
-    """Retorna features de temperatura processadas para um dispositivo."""
+    """Retorna features de temperatura e series completas (temp, degelo, setpoint, onoff)."""
     try:
         raw = buscar_telemetria(dispositivo_id)
         datasets = raw.get("datasets", [])
         if not datasets:
             return jsonify({"status": "ok", "dispositivo_id": dispositivo_id, "features": {}})
 
-        # Prefere "Temperatura Ambiente"; cai no primeiro dataset disponível
-        ds = next(
-            (d for d in datasets if "temperatura ambiente" in d.get("label", "").lower()),
-            datasets[0],
-        )
-        # A API usa "values", não "data"
-        valores = [v for v in ds.get("values", ds.get("data", [])) if v is not None]
-        if not valores:
+        from src.api_preprocessor import _extrair_features_telemetria, _extrair_series_telemetria
+
+        features = _extrair_features_telemetria(raw)
+        if not features:
             return jsonify({"status": "ok", "dispositivo_id": dispositivo_id, "features": {}})
 
-        arr = np.array(valores, dtype=float)
-        tendencia = float(np.polyfit(range(len(arr)), arr, 1)[0]) if len(arr) > 1 else 0.0
+        series = _extrair_series_telemetria(raw)
 
-        features = {
-            "temp_media":     round(float(arr.mean()), 1),
-            "temp_maxima":    round(float(arr.max()), 1),
-            "temp_minima":    round(float(arr.min()), 1),
-            "temp_amplitude": round(float(arr.max() - arr.min()), 1),
-            "temp_tendencia": round(tendencia, 3),
-            "labels":         raw.get("labels", []),
-            "valores":        valores[-48:],  # últimas 48 leituras para o gráfico
-        }
-        return jsonify({"status": "ok", "dispositivo_id": dispositivo_id, "features": features})
+        temp = series.get("temp", [])
+        arr = np.array(temp, dtype=float) if temp else np.array([])
+
+        return jsonify({
+            "status": "ok",
+            "dispositivo_id": dispositivo_id,
+            "features": {
+                "temp_media":         round(float(features.get("temp_media", 0)), 1),
+                "temp_maxima":        round(float(features.get("temp_maxima", 0)), 1),
+                "temp_minima":        round(float(features.get("temp_minima", 0)), 1),
+                "temp_amplitude":     round(float(features.get("temp_amplitude", 0)), 1),
+                "temp_tendencia":     round(float(features.get("temp_tendencia", 0)), 3),
+                "temp_acima_setpoint": round(float(features.get("temp_acima_setpoint", 0)), 3),
+                "degelo_fracao":      round(float(features.get("degelo_fracao", 0)), 3),
+                "onoff_fracao_ligado": round(float(features.get("onoff_fracao_ligado", 0)), 3),
+            },
+            "series": {
+                "temp":     temp[-96:] if len(temp) > 96 else temp,
+                "degelo":   series.get("degelo", [])[-96:],
+                "setpoint": series.get("setpoint", [])[-96:],
+                "onoff":    series.get("onoff", [])[-96:],
+            },
+            "labels": raw.get("labels", []),
+        })
     except Exception as e:
         return jsonify({"status": "erro", "mensagem": str(e)}), 500
 
@@ -228,6 +280,99 @@ def api_stats():
         stats = _computar_stats(df)
         stats["atualizado"] = datetime.now().isoformat()
         return jsonify(stats)
+    except Exception as e:
+        return jsonify({"status": "erro", "mensagem": str(e)}), 500
+
+
+@app.route("/api/predict/<int:dispositivo_id>")
+def api_predict(dispositivo_id):
+    """Retorna predicao de falha (RF) + deteccao de anomalia (OneClassSVM)."""
+    try:
+        if not _modelos_carregados or (_modelos["rf"] is None and _modelos["ocsvm"] is None):
+            return jsonify({"status": "ok", "dispositivo_id": dispositivo_id, "modelos": False})
+
+        raw = buscar_telemetria(dispositivo_id)
+
+        from src.features import extrair_features_janela
+        from src.api_preprocessor import _extrair_series_telemetria
+
+        series = _extrair_series_telemetria(raw)
+        if not series.get("temp"):
+            return jsonify({"status": "ok", "dispositivo_id": dispositivo_id, "features": False})
+
+        temp = series.get("temp", [])
+        degelo = series.get("degelo", [])
+        setpoint = series.get("setpoint", [])
+        onoff = series.get("onoff", [])
+
+        raw_features = extrair_features_janela(temp, degelo, setpoint, onoff)
+        if raw_features is None:
+            return jsonify({"status": "ok", "dispositivo_id": dispositivo_id, "features": False})
+
+        temp_arr = np.array(temp, dtype=float)
+        raw_features["temp_tendencia"] = (
+            float(np.polyfit(range(len(temp_arr)), temp_arr, 1)[0])
+            if len(temp_arr) > 1 else 0.0
+        )
+
+        result = {"dispositivo_id": dispositivo_id}
+
+        if _modelos["rf"] is not None:
+            try:
+                feature_cols = [
+                    "temp_media", "temp_maxima", "temp_minima", "temp_amplitude",
+                    "temp_volatilidade", "temp_tendencia",
+                ]
+                mapped = {
+                    "temp_media": raw_features.get("temp_mean", 0),
+                    "temp_maxima": raw_features.get("temp_max", 0),
+                    "temp_minima": raw_features.get("temp_min", 0),
+                    "temp_amplitude": raw_features.get("temp_amplitude", 0),
+                    "temp_volatilidade": raw_features.get("temp_std", 0),
+                    "temp_tendencia": raw_features.get("temp_tendencia", 0),
+                }
+                row = [mapped[c] for c in feature_cols]
+                X = np.array(row).reshape(1, -1)
+                proba = float(_modelos["rf"].predict_proba(X)[0])
+                result["risk_score"] = round(proba, 4)
+            except Exception:
+                result["risk_score"] = None
+        else:
+            # Fallback: risk score via OneClassSVM decision function (sigmoid-normalized)
+            if _modelos["ocsvm"] is not None:
+                try:
+                    feat_keys = _modelos["ocsvm"].feature_cols
+                    if feat_keys:
+                        row = [raw_features.get(c, 0.0) for c in feat_keys]
+                        X = np.array(row).reshape(1, -1)
+                        X = np.nan_to_num(X, nan=0.0)
+                        decision = _modelos["ocsvm"].decision_function(X)[0]
+                        proba = 1 / (1 + np.exp(-decision))
+                        result["risk_score"] = round(float(proba), 4)
+                    else:
+                        result["risk_score"] = None
+                except Exception:
+                    result["risk_score"] = None
+            else:
+                result["risk_score"] = None
+
+        if _modelos["ocsvm"] is not None:
+            feat_keys = _modelos["ocsvm"].feature_cols
+            if feat_keys:
+                row = [raw_features.get(c, 0.0) for c in feat_keys]
+                X = np.array(row).reshape(1, -1)
+                X = np.nan_to_num(X, nan=0.0)
+                pred_raw = _modelos["ocsvm"].predict_raw(X)[0]
+                result["anomaly"] = bool(pred_raw == -1)
+                result["anomaly_reason"] = _modelos["ocsvm"].gerar_motivo(raw_features, 0 if pred_raw == 1 else 1)
+            else:
+                result["anomaly"] = False
+                result["anomaly_reason"] = None
+        else:
+            result["anomaly"] = False
+            result["anomaly_reason"] = None
+
+        return jsonify({"status": "ok", **result})
     except Exception as e:
         return jsonify({"status": "erro", "mensagem": str(e)}), 500
 
@@ -267,5 +412,7 @@ if __name__ == "__main__":
     print(f"  Alarmes:    http://localhost:{args.port}/api/alarmes")
     print(f"  Unidades:   http://localhost:{args.port}/api/unidades")
     print(f"  Telemetria: http://localhost:{args.port}/api/telemetria/<id>")
+    print(f"  Predicao:   http://localhost:{args.port}/api/predict/<id>")
+    print(f"  Health:     http://localhost:{args.port}/api/health")
     print(f"  Stats:      http://localhost:{args.port}/api/stats\n")
     app.run(host=args.host, port=args.port, debug=False)
