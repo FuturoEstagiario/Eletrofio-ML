@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{% block title %}Dashboard{% endblock %} — EletroFrio ML</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,400;0,500;1,400&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='dashboards/dashboards.css') }}" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+</head>
+<body>
+
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-logo">
+    <div class="sidebar-logo-icon"><i class="bi bi-snow2"></i></div>
+    <div class="sidebar-logo-text">
+      <span class="sidebar-brand">EletroFrio</span>
+      <span class="sidebar-sub">ML Dashboard</span>
+    </div>
+    <button class="sidebar-collapse-btn" id="sidebarCollapseBtn" onclick="toggleSidebar()" title="Recolher menu">
+      <i class="bi bi-chevron-left" id="sidebarChevron"></i>
+    </button>
+  </div>
+
+  <nav class="sidebar-nav">
+    <div class="sidebar-section-label">Menu</div>
+    <a href="/" class="sidebar-link {% if active_page == 'home' %}active{% endif %}" title="Visão Geral">
+      <i class="bi bi-grid-1x2-fill"></i><span>Visão Geral</span>
+    </a>
+    <div class="sidebar-divider"></div>
+    <div class="sidebar-section-label">Dashboards</div>
+    <a href="/dashboards/saude" class="sidebar-link {% if active_page == 'saude' %}active{% endif %}" title="Saúde da Frota">
+      <i class="bi bi-heart-pulse-fill"></i><span>Saúde da Frota</span>
+    </a>
+    <a href="/dashboards/risco" class="sidebar-link {% if active_page == 'risco' %}active{% endif %}" title="Mapa de Risco">
+      <i class="bi bi-shield-exclamation"></i><span>Mapa de Risco</span>
+    </a>
+    <a href="/dashboards/temperatura" class="sidebar-link {% if active_page == 'temperatura' %}active{% endif %}" title="Temperatura">
+      <i class="bi bi-thermometer-half"></i><span>Temperatura</span>
+    </a>
+    <a href="/dashboards/alarmes-loja" class="sidebar-link {% if active_page == 'alarmes-loja' %}active{% endif %}" title="Alarmes/Loja">
+      <i class="bi bi-bar-chart-fill"></i><span>Alarmes/Loja</span>
+    </a>
+    <a href="/dashboards/degelo" class="sidebar-link {% if active_page == 'degelo' %}active{% endif %}" title="Ciclos de Degelo">
+      <i class="bi bi-snow"></i><span>Ciclos de Degelo</span>
+    </a>
+    <a href="/dashboards/pressao" class="sidebar-link {% if active_page == 'pressao' %}active{% endif %}" title="Pressão">
+      <i class="bi bi-speedometer2"></i><span>Pressão</span>
+    </a>
+    <a href="/dashboards/chamados" class="sidebar-link {% if active_page == 'chamados' %}active{% endif %}" title="Chamados">
+      <i class="bi bi-clipboard-check"></i><span>Chamados</span>
+    </a>
+    <div class="sidebar-divider"></div>
+    <a href="/dashboards/financeiro" class="sidebar-link {% if active_page == 'financeiro' %}active{% endif %}" title="Impacto Financeiro">
+      <i class="bi bi-currency-exchange"></i><span>Impacto Financeiro</span>
+    </a>
+  </nav>
+
+  <div class="sidebar-footer">
+    <span id="api-status-label"><i class="bi bi-circle-fill text-secondary" style="font-size:.55rem"></i> Verificando...</span>
+    <button class="sidebar-close-mobile" onclick="closeMobileSidebar()" title="Fechar">
+      <i class="bi bi-x-lg"></i>
+    </button>
+  </div>
+</aside>
+
+<div class="sidebar-overlay" id="sidebarOverlay" onclick="closeMobileSidebar()"></div>
+
+<div class="main-wrapper">
+  <header class="topbar">
+    <button class="topbar-toggle" onclick="toggleSidebar()"><i class="bi bi-list"></i></button>
+    <div class="topbar-title">
+      <h1>{% block page_title %}Dashboard{% endblock %}</h1>
+      <span class="topbar-sub">{% block page_subtitle %}EletroFrio ML{% endblock %}</span>
+    </div>
+    <div class="topbar-right">
+      <span class="topbar-ts" id="last-update"><i class="bi bi-clock me-1"></i>—</span>
+      <button class="topbar-notif" title="Alertas activos">
+        <i class="bi bi-bell"></i>
+        <span class="notif-dot"></span>
+      </button>
+      <div class="topbar-avatar" title="Administrador">AD</div>
+    </div>
+  </header>
+
+  <main class="content">
+    {% block content %}{% endblock %}
+  </main>
+</div>
+
+<div class="toast-container" id="toastContainer"></div>
+
+<!-- Modal Chamado — disponível em todos os dashboards -->
+<div class="modal fade" id="modalChamado" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content modal-custom">
+      <div class="modal-header modal-header-custom">
+        <h5 class="modal-title d-flex align-items-center gap-2">
+          <i class="bi bi-tools"></i>Abrir Chamado Técnico
+        </h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body px-4 py-3">
+        <div class="modal-device-card mb-3" id="mc-dispositivo"></div>
+        <div class="mb-3">
+          <label class="form-label fw-semibold" style="font-size:.83rem">Motivo / Observação</label>
+          <textarea id="mc-motivo" class="form-control" style="font-size:.83rem" rows="3"
+            placeholder="Descreva o motivo do chamado…"></textarea>
+        </div>
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" id="mc-tecnico" checked />
+          <label class="form-check-label" style="font-size:.83rem" for="mc-tecnico">
+            <i class="bi bi-person-fill-gear me-1 text-muted"></i>Requer técnico presencial
+          </label>
+        </div>
+        <div id="mc-feedback" class="mt-3"></div>
+      </div>
+      <div class="modal-footer px-4">
+        <button type="button" class="btn btn-light" style="font-size:.83rem" data-bs-dismiss="modal">Cancelar</button>
+        <button type="button" class="btn-confirm" id="mc-confirmar" onclick="confirmarChamado()">
+          <i class="bi bi-send-fill"></i>Confirmar Chamado
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+let _activeChamado = null;
+
+function abrirChamadoModal(d) {
+  _activeChamado = d;
+  document.getElementById('mc-dispositivo').innerHTML = `
+    <div style="display:flex;align-items:center;gap:.8rem;padding:.6rem .8rem;background:rgba(255,255,255,.04);border-radius:var(--radius-sm);border:1px solid rgba(255,255,255,.07)">
+      <span class="crit-badge crit-${d.criticidade}">${d.crit_label || d.criticidade}</span>
+      <div>
+        <div style="font-weight:600;font-size:.88rem">${d.dispositivo_nome || 'Device ' + d.dispositivo_id}</div>
+        <div style="font-size:.72rem;color:var(--muted)">${d.loja_nome || ''} &middot; ID ${d.dispositivo_id}</div>
+      </div>
+    </div>`;
+  document.getElementById('mc-motivo').value = '';
+  document.getElementById('mc-feedback').innerHTML = '';
+  const btn = document.getElementById('mc-confirmar');
+  btn.disabled = false;
+  btn.innerHTML = '<i class="bi bi-send-fill"></i>Confirmar Chamado';
+  document.getElementById('mc-tecnico').checked = true;
+  new bootstrap.Modal(document.getElementById('modalChamado')).show();
+}
+
+async function confirmarChamado() {
+  if (!_activeChamado) return;
+  const btn      = document.getElementById('mc-confirmar');
+  const motivo   = document.getElementById('mc-motivo').value.trim();
+  const tecnico  = document.getElementById('mc-tecnico').checked;
+  const feedback = document.getElementById('mc-feedback');
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Enviando…';
+
+  try {
+    const res  = await fetch('/api/abrir-chamado', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        loja_id:       _activeChamado.loja_id || 0,
+        loja_nome:     _activeChamado.loja_nome || '',
+        dispositivo_id: _activeChamado.dispositivo_id,
+        tag:           _activeChamado.dispositivo_nome || String(_activeChamado.dispositivo_id),
+        motivo_ia:     motivo || 'Chamado aberto via dashboard',
+        requer_tecnico: tecnico,
+      }),
+    });
+    const json = await res.json();
+    if (json.status !== 'ok') throw new Error(json.mensagem || 'Erro desconhecido');
+
+    feedback.innerHTML = '<div class="alert-inline" style="background:rgba(34,197,94,.1);border-color:rgba(34,197,94,.25);color:#4ade80"><i class="bi bi-check-circle-fill"></i> Chamado aberto com sucesso!</div>';
+    btn.innerHTML = '<i class="bi bi-check-fill"></i> Enviado';
+    showToast('Chamado aberto — ' + (_activeChamado.dispositivo_nome || 'Device ' + _activeChamado.dispositivo_id), 'success');
+    setTimeout(() => bootstrap.Modal.getInstance(document.getElementById('modalChamado'))?.hide(), 1600);
+  } catch (err) {
+    feedback.innerHTML = `<div class="alert-inline"><i class="bi bi-x-circle-fill"></i> Erro: ${err.message}</div>`;
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-send-fill"></i>Confirmar Chamado';
+  }
+}
+
+function toggleSidebar() {
+  const sidebar = document.getElementById('sidebar');
+  const overlay = document.getElementById('sidebarOverlay');
+  const chevron = document.getElementById('sidebarChevron');
+  if (window.innerWidth <= 992) {
+    sidebar.classList.toggle('open');
+    overlay.classList.toggle('open');
+  } else {
+    sidebar.classList.toggle('collapsed');
+    document.querySelector('.main-wrapper').style.marginLeft =
+      sidebar.classList.contains('collapsed') ? '64px' : 'var(--sidebar-w)';
+  }
+}
+function closeMobileSidebar() {
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('sidebarOverlay').classList.remove('open');
+}
+function showToast(msg, type) {
+  const icons = { success: 'bi-check-circle-fill', error: 'bi-x-circle-fill', info: 'bi-info-circle-fill' };
+  const el = document.createElement('div');
+  el.className = `toast-item toast-${type}`;
+  el.innerHTML = `<i class="bi ${icons[type] || icons.info}"></i><span>${msg}</span>`;
+  document.getElementById('toastContainer').appendChild(el);
+  setTimeout(() => { el.classList.add('toast-leaving'); setTimeout(() => el.remove(), 300); }, 4000);
+}
+fetch('/api/health').then(r => r.json()).then(d => {
+  const el = document.getElementById('api-status-label');
+  if (d.api) {
+    el.innerHTML = '<i class="bi bi-circle-fill text-success" style="font-size:.55rem"></i> API Online';
+  } else {
+    el.innerHTML = '<i class="bi bi-circle-fill text-danger" style="font-size:.55rem"></i> API Offline';
+  }
+}).catch(() => {});
+</script>
+{% block extra_scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,102 @@
+{% extends "dashboards/_base.html" %}
+
+{% block title %}Chamados{% endblock %}
+{% block page_title %}Chamados{% endblock %}
+{% block page_subtitle %}Log de chamados técnicos abertos{% endblock %}
+
+{% block content %}
+<div class="dash-page-header anim-fade-in-up">
+  <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+    <div>
+      <h2><i class="bi bi-clipboard-check me-2" style="color:#22c55e"></i>Chamados</h2>
+      <p>Histórico de chamados técnicos abertos pela plataforma</p>
+    </div>
+    <span class="last-update-badge" id="chamados-update"><i class="bi bi-arrow-clockwise"></i>—</span>
+  </div>
+</div>
+
+<div class="dash-intro anim-fade-in-up" style="animation-delay:.03s">
+  <i class="bi bi-info-circle-fill"></i>
+  <p>Registo de todas as ordens de serviço abertas pela plataforma. Cada chamado é gerado manualmente pelo operador a partir de um alarme ativo. O histórico permite auditar <strong>tempo de resposta</strong>, frequência por dispositivo e taxa de reincidência — dados essenciais para otimizar contratos de manutenção e dimensionamento de equipa técnica.</p>
+</div>
+
+<div class="metric-grid anim-fade-in-up" style="animation-delay:.05s">
+  <div class="metric-card">
+    <div class="metric-icon metric-icon-accent"><i class="bi bi-clipboard-fill"></i></div>
+    <div class="metric-value" id="kpi-total">—</div>
+    <div class="metric-label">Total chamados</div>
+  </div>
+  <div class="metric-card">
+    <div class="metric-icon metric-icon-warning"><i class="bi bi-calendar-day"></i></div>
+    <div class="metric-value" id="kpi-hoje">—</div>
+    <div class="metric-label">Abertos hoje</div>
+  </div>
+  <div class="metric-card">
+    <div class="metric-icon metric-icon-info"><i class="bi bi-graph-up"></i></div>
+    <div class="metric-value" id="kpi-score-medio">—</div>
+    <div class="metric-label">Score médio trigger</div>
+  </div>
+  <div class="metric-card">
+    <div class="metric-icon metric-icon-success"><i class="bi bi-check-circle-fill"></i></div>
+    <div class="metric-value" id="kpi-abertos">—</div>
+    <div class="metric-label">Em aberto</div>
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-12 col-xl-8 anim-fade-in-up" style="animation-delay:.1s">
+    <div class="card-panel">
+      <div class="panel-header">
+        <div class="d-flex align-items-center gap-2">
+          <span class="panel-title">Log de Chamados</span>
+          <span class="panel-count" id="chamados-count">—</span>
+        </div>
+      </div>
+      <div class="position-relative">
+        <div class="loading-overlay" id="chamados-loading"><div class="spinner-lg"></div><span>Carregando…</span></div>
+        <div id="chamados-empty" style="display:none">
+          <div class="empty-chart" style="min-height:180px">
+            <i class="bi bi-clipboard-x"></i>
+            <p>Nenhum chamado registado ainda</p>
+            <span style="font-size:.78rem;color:var(--muted)">Chamados aparecem aqui após serem abertos no dashboard principal</span>
+          </div>
+        </div>
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Timestamp</th>
+                <th>Dispositivo</th>
+                <th>Loja</th>
+                <th class="num-col">Score ML</th>
+                <th>Motivo</th>
+                <th class="text-center">Status</th>
+              </tr>
+            </thead>
+            <tbody id="chamados-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12 col-xl-4 anim-fade-in-up" style="animation-delay:.15s">
+    <div class="card-panel h-100">
+      <div class="panel-header">
+        <span class="panel-title">Chamados por Hora</span>
+      </div>
+      <div class="chart-container-sm position-relative">
+        <div class="empty-chart" id="hora-empty" style="min-height:240px">
+          <i class="bi bi-clock-history"></i>
+          <p>Sem dados suficientes</p>
+        </div>
+        <canvas id="chart-hora" style="display:none"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{{ url_for('static', filename='dashboards/chamados.js') }}"></script>
+{% endblock %}

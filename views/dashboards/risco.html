@@ -1,0 +1,109 @@
+{% extends "dashboards/_base.html" %}
+
+{% block title %}Mapa de Risco{% endblock %}
+{% block page_title %}Mapa de Risco{% endblock %}
+{% block page_subtitle %}Análise preditiva por dispositivo{% endblock %}
+
+{% block content %}
+<div class="dash-page-header anim-fade-in-up">
+  <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+    <div>
+      <h2><i class="bi bi-shield-exclamation me-2 text-danger"></i>Mapa de Risco</h2>
+      <p>Score ML + telemetria por dispositivo, ordenado por criticidade</p>
+    </div>
+    <span class="last-update-badge" id="risco-update"><i class="bi bi-arrow-clockwise"></i>—</span>
+  </div>
+</div>
+
+<div class="dash-intro anim-fade-in-up" style="animation-delay:.03s">
+  <i class="bi bi-info-circle-fill"></i>
+  <p>Cada linha representa um compressor monitorado em tempo real. O <strong>score composto</strong> combina a predição do modelo ML (×40%), a criticidade do equipamento (×25%), o percentual de degelo (×20%) e o erro de setpoint (×15%). A <strong>barra de tendência</strong> compara o score atual com o histórico das últimas 8 leituras — vermelho indica agravamento, verde indica melhora.</p>
+</div>
+
+<div class="metric-grid anim-fade-in-up" id="risco-kpis" style="animation-delay:.05s">
+  <div class="metric-card">
+    <div class="metric-icon metric-icon-accent"><i class="bi bi-cpu"></i></div>
+    <div class="metric-value" id="kpi-total">—</div>
+    <div class="metric-label">Devices monitorados</div>
+  </div>
+  <div class="metric-card">
+    <div class="metric-icon metric-icon-danger"><i class="bi bi-exclamation-triangle-fill"></i></div>
+    <div class="metric-value" id="kpi-crit-pct">—</div>
+    <div class="metric-label">Crítico + Alto</div>
+  </div>
+  <div class="metric-card">
+    <div class="metric-icon metric-icon-warning"><i class="bi bi-hourglass-split"></i></div>
+    <div class="metric-value" id="kpi-sem-trat">—</div>
+    <div class="metric-label">Sem tratativa</div>
+  </div>
+  <div class="metric-card">
+    <div class="metric-icon metric-icon-info"><i class="bi bi-graph-up"></i></div>
+    <div class="metric-value" id="kpi-score-medio">—</div>
+    <div class="metric-label">Score ML médio</div>
+  </div>
+</div>
+
+<div class="card-panel anim-fade-in-up" style="animation-delay:.1s">
+  <div class="panel-header flex-wrap gap-2">
+    <div class="d-flex align-items-center gap-2">
+      <span class="panel-title">Dispositivos em risco</span>
+      <span class="panel-count" id="risco-count">—</span>
+    </div>
+    <div class="filter-bar" style="padding:0">
+      <span class="filter-label">Criticidade:</span>
+      <div class="crit-check-group" id="crit-filters">
+        <span class="crit-check-btn crit-btn-C" data-crit="C">C Crítica</span>
+        <span class="crit-check-btn crit-btn-A" data-crit="A">A Alta</span>
+        <span class="crit-check-btn crit-btn-M" data-crit="M">M Média</span>
+        <span class="crit-check-btn crit-btn-B" data-crit="B">B Baixa</span>
+        <span class="crit-check-btn crit-btn-I" data-crit="I">I Info</span>
+      </div>
+      <select class="filter-select" id="loja-filter">
+        <option value="">Todas as lojas</option>
+      </select>
+      <select class="filter-select" id="sort-filter">
+        <option value="prioridade">Ordenar: Prioridade</option>
+        <option value="crit">Ordenar: Criticidade</option>
+        <option value="score">Ordenar: Score ML</option>
+        <option value="degelo">Ordenar: % Degelo</option>
+        <option value="temp">Ordenar: Temp Actual</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="position-relative">
+    <div class="loading-overlay" id="risco-loading">
+      <div class="spinner-lg"></div>
+      <span>Carregando dados de risco…</span>
+    </div>
+    <div class="table-responsive">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Criticidade</th>
+            <th>Dispositivo</th>
+            <th>Loja</th>
+            <th class="num-col" title="Temperatura média atual do compressor"><i class="bi bi-thermometer-half"></i> Temp</th>
+            <th class="num-col" title="Erro médio vs. setpoint — positivo = acima do alvo, negativo = abaixo"><i class="bi bi-arrow-left-right"></i> Δ Setpoint</th>
+            <th class="num-col" title="Desvio padrão da temperatura — mede instabilidade do ciclo térmico"><i class="bi bi-activity"></i> Volatilidade</th>
+            <th class="num-col" title="% do tempo em ciclo de degelo nas últimas 24h — alerta acima de 30%"><i class="bi bi-snow"></i> Degelo</th>
+            <th title="Score composto: ML×40% + Criticidade×25% + Degelo×20% + ΔSP×15% | barra = risco atual, linha = tendência histórica"><i class="bi bi-cpu"></i> Score / Tend.</th>
+            <th class="text-center" title="Indica se o alarme possui tratativa técnica registrada"><i class="bi bi-clipboard-check"></i> Trat.</th>
+            <th title="Há quanto tempo o alarme está ativo"><i class="bi bi-clock"></i> Ativo há</th>
+            <th class="text-center">Ação</th>
+          </tr>
+        </thead>
+        <tbody id="risco-tbody"></tbody>
+      </table>
+    </div>
+    <div class="empty-chart" id="risco-empty" style="display:none;min-height:200px">
+      <i class="bi bi-shield-check"></i>
+      <p>Nenhum dado de risco disponível</p>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{{ url_for('static', filename='dashboards/risco.js') }}"></script>
+{% endblock %}

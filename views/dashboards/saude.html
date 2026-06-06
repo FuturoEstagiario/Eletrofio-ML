@@ -1,0 +1,113 @@
+{% extends "dashboards/_base.html" %}
+
+{% block title %}Saúde da Frota{% endblock %}
+{% block page_title %}Saúde da Frota{% endblock %}
+{% block page_subtitle %}Visão consolidada da frota — prioridades de manutenção{% endblock %}
+
+{% block content %}
+<div class="dash-page-header anim-fade-in-up">
+  <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+    <div>
+      <h2><i class="bi bi-heart-pulse-fill me-2" style="color:var(--beige)"></i>Saúde da Frota</h2>
+      <p>Diagnóstico consolidado — criticidade, score ML e prioridades de intervenção</p>
+    </div>
+    <span class="last-update-badge" id="saude-update"><i class="bi bi-arrow-clockwise"></i>—</span>
+  </div>
+</div>
+
+<div class="dash-intro anim-fade-in-up" style="animation-delay:.03s">
+  <i class="bi bi-info-circle-fill"></i>
+  <p>Panorama executivo de toda a frota monitorada: distribuição de criticidade, score médio de risco e concentração de problemas por loja. O <strong>top-10</strong> lista os compressores com maior score ML — são os candidatos imediatos a intervenção preventiva para evitar paradas não planeadas.</p>
+</div>
+
+<div class="metric-grid anim-fade-in-up" style="animation-delay:.05s">
+  <div class="metric-card kpi-total">
+    <div class="metric-icon metric-icon-accent"><i class="bi bi-cpu"></i></div>
+    <div class="metric-value" id="kpi-total">—</div>
+    <div class="metric-label">Total Devices</div>
+  </div>
+  <div class="metric-card">
+    <div class="metric-icon metric-icon-danger"><i class="bi bi-exclamation-octagon-fill"></i></div>
+    <div class="metric-value" id="kpi-critico">—</div>
+    <div class="metric-label">Críticos</div>
+    <div class="metric-sub" id="kpi-critico-pct">—</div>
+  </div>
+  <div class="metric-card">
+    <div class="metric-icon metric-icon-warning"><i class="bi bi-exclamation-triangle-fill"></i></div>
+    <div class="metric-value" id="kpi-atencao">—</div>
+    <div class="metric-label">Atenção (A+M)</div>
+    <div class="metric-sub" id="kpi-atencao-pct">—</div>
+  </div>
+  <div class="metric-card">
+    <div class="metric-icon metric-icon-success"><i class="bi bi-shield-check"></i></div>
+    <div class="metric-value" id="kpi-normal">—</div>
+    <div class="metric-label">Normal (B+I)</div>
+    <div class="metric-sub" id="kpi-normal-pct">—</div>
+  </div>
+  <div class="metric-card">
+    <div class="metric-icon metric-icon-beige"><i class="bi bi-graph-up-arrow"></i></div>
+    <div class="metric-value" id="kpi-score-medio">—</div>
+    <div class="metric-label">Score ML Médio</div>
+    <div class="metric-sub">risco da frota</div>
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-12 col-lg-4 anim-fade-in-up" style="animation-delay:.1s">
+    <div class="card-panel h-100">
+      <div class="panel-header">
+        <span class="panel-title">Distribuição da Frota</span>
+        <span class="panel-badge">por criticidade</span>
+      </div>
+      <div class="chart-container-sm position-relative">
+        <div class="loading-overlay" id="saude-loading"><div class="spinner-lg"></div><span>Carregando…</span></div>
+        <canvas id="chart-donut"></canvas>
+      </div>
+      <div id="crit-legend" style="margin-top:.75rem;display:flex;flex-direction:column;gap:.3rem"></div>
+    </div>
+  </div>
+
+  <div class="col-12 col-lg-8 anim-fade-in-up" style="animation-delay:.12s">
+    <div class="card-panel h-100">
+      <div class="panel-header">
+        <span class="panel-title">Score Médio por Loja</span>
+        <span class="panel-badge">risco relativo</span>
+      </div>
+      <div class="chart-container position-relative">
+        <canvas id="chart-lojas"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12 anim-fade-in-up" style="animation-delay:.18s">
+    <div class="card-panel">
+      <div class="panel-header">
+        <span class="panel-title">Top 10 — Prioridade de Manutenção</span>
+        <span class="panel-badge">maior risco</span>
+      </div>
+      <div class="table-responsive">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Criticidade</th>
+              <th>Dispositivo</th>
+              <th>Loja</th>
+              <th class="num-col">Score ML</th>
+              <th class="num-col">Temp °C</th>
+              <th class="num-col">Erro vs SP</th>
+              <th class="num-col">% Degelo</th>
+              <th class="text-center">Tratativa</th>
+            </tr>
+          </thead>
+          <tbody id="top10-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{{ url_for('static', filename='dashboards/saude.js') }}"></script>
+{% endblock %}

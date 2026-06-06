@@ -1,0 +1,114 @@
+{% extends "dashboards/_base.html" %}
+
+{% block title %}Alarmes por Loja{% endblock %}
+{% block page_title %}Alarmes por Loja{% endblock %}
+{% block page_subtitle %}Distribuição de alarmes por unidade{% endblock %}
+
+{% block content %}
+<div class="dash-page-header anim-fade-in-up">
+  <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+    <div>
+      <h2><i class="bi bi-bar-chart-fill me-2" style="color:var(--accent)"></i>Alarmes por Loja</h2>
+      <p>Top lojas com maior volume de alarmes, distribuídos por criticidade</p>
+    </div>
+    <span class="last-update-badge" id="aloja-update"><i class="bi bi-arrow-clockwise"></i>—</span>
+  </div>
+</div>
+
+<div class="dash-intro anim-fade-in-up" style="animation-delay:.03s">
+  <i class="bi bi-info-circle-fill"></i>
+  <p>Aplica a <strong>regra de Pareto (80/20)</strong> aos alarmes: identifica as poucas lojas que concentram a maior parte das ocorrências. As barras em vermelho no gráfico indicam as unidades cuja soma acumulada ainda não atingiu 80% do total — são os alvos prioritários de intervenção para máximo impacto com mínimo esforço.</p>
+</div>
+
+<div class="metric-grid anim-fade-in-up" style="animation-delay:.05s">
+  <div class="metric-card">
+    <div class="metric-icon metric-icon-accent"><i class="bi bi-shop"></i></div>
+    <div class="metric-value" id="kpi-total-lojas">—</div>
+    <div class="metric-label">Lojas com alarme</div>
+  </div>
+  <div class="metric-card">
+    <div class="metric-icon metric-icon-danger"><i class="bi bi-lightning-fill"></i></div>
+    <div class="metric-value" id="kpi-loja-top">—</div>
+    <div class="metric-label">Loja com mais críticos</div>
+    <div class="metric-sub" id="kpi-loja-top-nome" style="font-size:.68rem"></div>
+  </div>
+  <div class="metric-card">
+    <div class="metric-icon metric-icon-warning"><i class="bi bi-hourglass-split"></i></div>
+    <div class="metric-value" id="kpi-sem-trat">—</div>
+    <div class="metric-label">Total sem tratativa</div>
+  </div>
+  <div class="metric-card">
+    <div class="metric-icon metric-icon-danger"><i class="bi bi-exclamation-triangle-fill"></i></div>
+    <div class="metric-value" id="kpi-crit-alta">—</div>
+    <div class="metric-label">Alarmes C + A</div>
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-12 col-lg-8 anim-fade-in-up" style="animation-delay:.1s">
+    <div class="card-panel">
+      <div class="panel-header">
+        <span class="panel-title">Top 15 Lojas — Distribuição por Criticidade</span>
+      </div>
+      <div class="chart-container position-relative">
+        <div class="loading-overlay" id="aloja-loading"><div class="spinner-lg"></div><span>Carregando…</span></div>
+        <canvas id="chart-lojas-bar"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12 col-lg-4 anim-fade-in-up" style="animation-delay:.15s">
+    <div class="card-panel h-100">
+      <div class="panel-header">
+        <span class="panel-title">Distribuição por Criticidade</span>
+      </div>
+      <div class="chart-container-sm position-relative">
+        <canvas id="chart-crit-doughnut"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12 anim-fade-in-up" style="animation-delay:.18s">
+    <div class="card-panel">
+      <div class="panel-header">
+        <span class="panel-title">Análise de Pareto — 80/20</span>
+        <span class="panel-badge">regra 80/20</span>
+      </div>
+      <p style="font-size:.75rem;color:var(--muted);margin:.25rem 0 .75rem">Lojas em <span style="color:#ef4444;font-weight:700">vermelho</span> concentram 80% dos alarmes — foque esforço nelas primeiro.</p>
+      <div style="height:280px;position:relative">
+        <canvas id="chart-pareto"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12 anim-fade-in-up" style="animation-delay:.2s">
+    <div class="card-panel">
+      <div class="panel-header">
+        <span class="panel-title">Ranking de Lojas</span>
+      </div>
+      <div class="table-responsive">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Loja</th>
+              <th class="num-col">Total</th>
+              <th class="num-col" style="color:var(--c-crit)">C</th>
+              <th class="num-col" style="color:var(--c-alta)">A</th>
+              <th class="num-col" style="color:var(--c-media)">M</th>
+              <th class="num-col" style="color:var(--c-baixa)">B</th>
+              <th class="num-col" style="color:var(--c-info)">I</th>
+              <th class="num-col">Sem Trat.</th>
+            </tr>
+          </thead>
+          <tbody id="lojas-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{{ url_for('static', filename='dashboards/alarmes_loja.js') }}"></script>
+{% endblock %}

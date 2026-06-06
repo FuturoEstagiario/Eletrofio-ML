@@ -1,0 +1,88 @@
+{% extends "dashboards/_base.html" %}
+
+{% block title %}Ciclos de Degelo{% endblock %}
+{% block page_title %}Ciclos de Degelo{% endblock %}
+{% block page_subtitle %}Análise de degelo por dispositivo{% endblock %}
+
+{% block content %}
+<div class="dash-page-header anim-fade-in-up">
+  <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+    <div>
+      <h2><i class="bi bi-snow me-2" style="color:#3b82f6"></i>Ciclos de Degelo</h2>
+      <p>Fracção de tempo em degelo, ciclos e duração média por dispositivo</p>
+    </div>
+    <span class="last-update-badge" id="degelo-update"><i class="bi bi-arrow-clockwise"></i>—</span>
+  </div>
+</div>
+
+<div class="dash-intro anim-fade-in-up" style="animation-delay:.03s">
+  <i class="bi bi-info-circle-fill"></i>
+  <p>Compressores com <strong>degelo acima de 30%</strong> do tempo nas últimas 24h são suspeitos de bloqueio de condensador, refrigerante baixo ou sensor defeituoso. A duração média por ciclo e o número total de ciclos ajudam a distinguir um degelo programado normal de um evento contínuo que indica problema real.</p>
+</div>
+
+<div class="metric-grid anim-fade-in-up" style="animation-delay:.05s">
+  <div class="metric-card">
+    <div class="metric-icon metric-icon-accent"><i class="bi bi-cpu"></i></div>
+    <div class="metric-value" id="kpi-devices">—</div>
+    <div class="metric-label">Devices monitorados</div>
+  </div>
+  <div class="metric-card">
+    <div class="metric-icon metric-icon-danger"><i class="bi bi-exclamation-triangle-fill"></i></div>
+    <div class="metric-value" id="kpi-alerta">—</div>
+    <div class="metric-label">Devices em alerta</div>
+    <div class="metric-sub">&gt;30% degelo</div>
+  </div>
+  <div class="metric-card">
+    <div class="metric-icon metric-icon-warning"><i class="bi bi-snow2"></i></div>
+    <div class="metric-value" id="kpi-max-fracao">—</div>
+    <div class="metric-label">Maior % degelo</div>
+  </div>
+  <div class="metric-card">
+    <div class="metric-icon metric-icon-info"><i class="bi bi-arrow-repeat"></i></div>
+    <div class="metric-value" id="kpi-media-ciclos">—</div>
+    <div class="metric-label">Média de ciclos</div>
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-12 col-xl-7 anim-fade-in-up" style="animation-delay:.1s">
+    <div class="card-panel">
+      <div class="panel-header">
+        <span class="panel-title">Fracção de Degelo por Dispositivo</span>
+        <span class="alert-threshold"><i class="bi bi-dash-lg"></i> Threshold 30%</span>
+      </div>
+      <div class="chart-container position-relative">
+        <div class="loading-overlay" id="degelo-loading"><div class="spinner-lg"></div><span>Carregando…</span></div>
+        <div id="chart-degelo"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12 col-xl-5 anim-fade-in-up" style="animation-delay:.15s">
+    <div class="card-panel h-100">
+      <div class="panel-header">
+        <span class="panel-title">Tabela de Degelo</span>
+      </div>
+      <div class="table-responsive" style="max-height:420px;overflow-y:auto">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Device</th>
+              <th>Loja</th>
+              <th class="num-col">% Degelo</th>
+              <th class="num-col">Ciclos</th>
+              <th class="num-col">Dur Média</th>
+              <th class="text-center">Status</th>
+            </tr>
+          </thead>
+          <tbody id="degelo-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{{ url_for('static', filename='dashboards/degelo.js') }}"></script>
+{% endblock %}

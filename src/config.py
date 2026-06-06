@@ -16,9 +16,31 @@ NORMAL_TEMP_THRESHOLD = 5.0
 
 SERIES_MAP = {
     "Temperatura Ambiente": "temp",
-    "Status Degelo": "degelo",
     "Setpoint Ambiente": "setpoint",
+    "Status Degelo": "degelo",
     "Estado de Funcionamento ON/OFF": "onoff",
+    "Temperatura de Degelo": "temp_degelo",
+    "Relé de Degelo": "rele_degelo",
+    "L1 - Pressão de Sucção": "pressao_succao",
+    "L1 - Pressão de Condensação": "pressao_cond",
+    "L1 - Temperatura da sucção": "temp_succao",
+    "L1 - Temperatura de Evaporação": "temp_evap",
+    "L1 - Superaquecimento": "superaquecimento",
+    "L1 - Setpoint Sucção": "setpoint_succao",
+    "Abertura de válvula %": "abertura_valvula",
+    "L1 - Status Compressor 1": "comp1_on",
+    "L1 - Status Compressor 2": "comp2_on",
+    "L1 - Status Compressor 3": "comp3_on",
+    "L1 - Status Compressor 4": "comp4_on",
+    "L1 - Status Compressor 5": "comp5_on",
+    "L1 - Requisição de compressores": "req_compressores",
+    "L1 - Status Ventilador 1": "ventilador1_on",
+    "Status Condensador 1": "cond1_on",
+    "Status Condensador 2": "cond2_on",
+    "Temperatura Entrada do Glicol": "temp_glicol_entrada",
+    "Temperatura de Saída do Glicol": "temp_glicol_saida",
+    "Temperatura Subresfriamento": "temp_subresfriamento",
+    "Temperatura do Ar Externo": "temp_ar_externo",
 }
 
 CRITICIDADE_MAP = {"A": 3, "M": 2, "B": 1, "C": 4}

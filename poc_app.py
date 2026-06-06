@@ -27,6 +27,14 @@ from flask import Flask, jsonify, render_template, request
 from whitenoise import WhiteNoise
 from src.api_client import buscar_alarmes, buscar_unidades, buscar_telemetria, abrir_chamado
 from src.api_preprocessor import processar_alarmes, _extrair_features_telemetria
+from src.data_collector import parse_telemetria
+from src.features import processar_dispositivo
+from src.config import SERIES_MAP
+from src.dashboard_service import (
+    risco_tabela, temperatura_series, alarmes_por_loja,
+    degelo_analysis, pressao_devices, pressao_series,
+    saude_frota, financeiro_impacto,
+)
 
 # ── Carregamento de modelos (tolerante a falhas) ──────────────────────────
 _modelos = {"rf": None, "ocsvm": None}
@@ -53,7 +61,13 @@ except Exception:
 app = Flask(__name__, template_folder="views", static_folder="views")
 app.wsgi_app = WhiteNoise(app.wsgi_app, root="views/", prefix="static")
 
-_cache = {"alarmes_raw": [], "unidades": [], "ts": None}
+_cache = {
+    "alarmes_raw": [], "unidades": [],
+    "tele_features": {},
+    "tele_series": {},
+    "chamados_log": [],
+    "ts": None, "ts_tele": None,
+}
 CACHE_TTL = 600
 
 
@@ -68,6 +82,24 @@ def _fetch_background():
         except Exception:
             pass
         _cache["ts"] = time.time()
+
+        device_ids = set(a.get("dispositivoId") for a in _cache["alarmes_raw"] if a.get("dispositivoId"))
+        for did in device_ids:
+            try:
+                raw = buscar_telemetria(did)
+                df_tele = parse_telemetria(did, raw)
+                if df_tele is not None:
+                    sd = {"labels": df_tele["timestamp_label"].tolist()}
+                    for col in SERIES_MAP.values():
+                        if col in df_tele.columns:
+                            sd[col] = df_tele[col].tolist()
+                    _cache["tele_series"][did] = sd
+                    _cache["tele_features"][did] = processar_dispositivo(df_tele)
+            except Exception:
+                pass
+            time.sleep(0.15)
+        _cache["ts_tele"] = time.time()
+
         time.sleep(CACHE_TTL)
 
 
@@ -394,7 +426,162 @@ def api_abrir_chamado():
             motivo_ia=str(body["motivo_ia"]),
             requer_tecnico=bool(body.get("requer_tecnico", True)),
         )
+        _cache["chamados_log"].append({
+            "ts": datetime.now().isoformat(),
+            "dispositivo_id": body["dispositivo_id"],
+            "loja_nome": body["loja_nome"],
+            "tag": body["tag"],
+            "motivo": body["motivo_ia"],
+            "status": "aberto",
+        })
         return jsonify({"status": "ok", "resposta": resposta})
+    except Exception as e:
+        return jsonify({"status": "erro", "mensagem": str(e)}), 500
+
+
+# ── Rotas — Dashboards HTML ───────────────────────────────────────────────────
+
+@app.route("/dashboards/risco")
+def dashboard_risco():
+    return render_template("dashboards/risco.html", active_page="risco")
+
+
+@app.route("/dashboards/temperatura")
+def dashboard_temperatura():
+    return render_template("dashboards/temperatura.html", active_page="temperatura")
+
+
+@app.route("/dashboards/alarmes-loja")
+def dashboard_alarmes_loja():
+    return render_template("dashboards/alarmes_loja.html", active_page="alarmes-loja")
+
+
+@app.route("/dashboards/degelo")
+def dashboard_degelo():
+    return render_template("dashboards/degelo.html", active_page="degelo")
+
+
+@app.route("/dashboards/pressao")
+def dashboard_pressao():
+    return render_template("dashboards/pressao.html", active_page="pressao")
+
+
+@app.route("/dashboards/saude")
+def dashboard_saude():
+    return render_template("dashboards/saude.html", active_page="saude")
+
+
+@app.route("/dashboards/chamados")
+def dashboard_chamados():
+    return render_template("dashboards/chamados.html", active_page="chamados")
+
+
+# ── Rotas — API JSON Dashboards ───────────────────────────────────────────────
+
+@app.route("/api/dashboard/risco")
+def api_dashboard_risco():
+    try:
+        dados = risco_tabela(_cache["alarmes_raw"], _cache["tele_features"], _modelos)
+        return jsonify({"status": "ok", "dados": dados})
+    except Exception as e:
+        return jsonify({"status": "erro", "mensagem": str(e)}), 500
+
+
+@app.route("/api/dashboard/temperatura/devices")
+def api_dashboard_temperatura_devices():
+    try:
+        raw_map = {a.get("dispositivoId"): a for a in _cache["alarmes_raw"]}
+        devices = []
+        for did in _cache["tele_series"]:
+            raw = raw_map.get(did, {})
+            devices.append({
+                "did": did,
+                "nome": raw.get("dispositivoNm", f"Device {did}"),
+                "loja": raw.get("lojaNm", ""),
+                "criticidade": raw.get("criticidade", "I"),
+            })
+        return jsonify({"status": "ok", "dados": devices})
+    except Exception as e:
+        return jsonify({"status": "erro", "mensagem": str(e)}), 500
+
+
+@app.route("/api/dashboard/temperatura/<int:did>")
+def api_dashboard_temperatura_series(did):
+    try:
+        dados = temperatura_series(did, _cache["tele_series"])
+        if dados is None:
+            return jsonify({"status": "erro", "mensagem": "Sem dados de telemetria para este dispositivo"}), 404
+        return jsonify({"status": "ok", "dados": dados})
+    except Exception as e:
+        return jsonify({"status": "erro", "mensagem": str(e)}), 500
+
+
+@app.route("/api/dashboard/alarmes-loja")
+def api_dashboard_alarmes_loja():
+    try:
+        dados = alarmes_por_loja(_cache["alarmes_raw"])
+        return jsonify({"status": "ok", "dados": dados})
+    except Exception as e:
+        return jsonify({"status": "erro", "mensagem": str(e)}), 500
+
+
+@app.route("/api/dashboard/degelo")
+def api_dashboard_degelo():
+    try:
+        dados = degelo_analysis(_cache["tele_features"], _cache["alarmes_raw"])
+        return jsonify({"status": "ok", "dados": dados})
+    except Exception as e:
+        return jsonify({"status": "erro", "mensagem": str(e)}), 500
+
+
+@app.route("/api/dashboard/pressao/devices")
+def api_dashboard_pressao_devices():
+    try:
+        dados = pressao_devices(_cache["tele_features"])
+        return jsonify({"status": "ok", "dados": dados})
+    except Exception as e:
+        return jsonify({"status": "erro", "mensagem": str(e)}), 500
+
+
+@app.route("/api/dashboard/pressao/<int:did>")
+def api_dashboard_pressao_series(did):
+    try:
+        dados = pressao_series(did, _cache["tele_series"])
+        if dados is None:
+            return jsonify({"status": "erro", "mensagem": "Sem dados de pressão para este dispositivo"}), 404
+        return jsonify({"status": "ok", "dados": dados})
+    except Exception as e:
+        return jsonify({"status": "erro", "mensagem": str(e)}), 500
+
+
+@app.route("/api/dashboard/saude")
+def api_dashboard_saude():
+    try:
+        dados = saude_frota(_cache["alarmes_raw"], _cache["tele_features"], _modelos)
+        return jsonify({"status": "ok", "dados": dados})
+    except Exception as e:
+        return jsonify({"status": "erro", "mensagem": str(e)}), 500
+
+
+@app.route("/api/dashboard/chamados")
+def api_dashboard_chamados():
+    try:
+        dados = list(reversed(_cache["chamados_log"]))[:100]
+        return jsonify({"status": "ok", "dados": dados})
+    except Exception as e:
+        return jsonify({"status": "erro", "mensagem": str(e)}), 500
+
+
+@app.route("/dashboards/financeiro")
+def dashboard_financeiro():
+    return render_template("dashboards/financeiro.html", active_page="financeiro")
+
+
+@app.route("/api/dashboard/financeiro")
+def api_dashboard_financeiro():
+    try:
+        dados = financeiro_impacto(_cache["alarmes_raw"], _cache["tele_features"], _modelos)
+        return jsonify({"status": "ok", "dados": dados})
     except Exception as e:
         return jsonify({"status": "erro", "mensagem": str(e)}), 500
 

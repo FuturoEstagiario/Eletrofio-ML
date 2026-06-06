@@ -1,0 +1,101 @@
+{% extends "dashboards/_base.html" %}
+
+{% block title %}Pressão{% endblock %}
+{% block page_title %}Pressão{% endblock %}
+{% block page_subtitle %}Pressão de sucção, condensação e superaquecimento{% endblock %}
+
+{% block content %}
+<div class="dash-page-header anim-fade-in-up">
+  <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+    <div>
+      <h2><i class="bi bi-speedometer2 me-2" style="color:var(--c-alta)"></i>Pressão</h2>
+      <p>Análise de pressão de sucção/condensação e superaquecimento por dispositivo</p>
+    </div>
+    <div class="d-flex align-items-center gap-2">
+      <select class="device-selector" id="device-select">
+        <option value="">Selecione um dispositivo…</option>
+      </select>
+      <span class="last-update-badge" id="pressao-update" style="display:none"><i class="bi bi-arrow-clockwise"></i>—</span>
+    </div>
+  </div>
+</div>
+
+<div class="dash-intro anim-fade-in-up" style="animation-delay:.03s">
+  <i class="bi bi-info-circle-fill"></i>
+  <p>A <strong>razão PC/PS</strong> (condensação ÷ sucção) é o termómetro do ciclo de refrigeração: valores acima de 3,5 indicam bloqueio de condensador; abaixo de 2,0 apontam para falta de gás. O <strong>superaquecimento</strong> acima de 35 °C sinaliza refrigerante insuficiente ou restrição de expansão — ambos precursores diretos de falha de compressor.</p>
+</div>
+
+<div class="metric-grid anim-fade-in-up" style="animation-delay:.05s">
+  <div class="metric-card">
+    <div class="metric-icon metric-icon-info"><i class="bi bi-arrow-down-circle"></i></div>
+    <div class="metric-value" id="kpi-ps">—</div>
+    <div class="metric-label">P. Sucção Média</div>
+    <div class="metric-sub">bar</div>
+  </div>
+  <div class="metric-card">
+    <div class="metric-icon metric-icon-warning"><i class="bi bi-arrow-up-circle"></i></div>
+    <div class="metric-value" id="kpi-pc">—</div>
+    <div class="metric-label">P. Condensação Média</div>
+    <div class="metric-sub">bar</div>
+  </div>
+  <div class="metric-card">
+    <div class="metric-icon metric-icon-accent"><i class="bi bi-slash-circle"></i></div>
+    <div class="metric-value" id="kpi-razao">—</div>
+    <div class="metric-label">Razão PC/PS</div>
+  </div>
+  <div class="metric-card">
+    <div class="metric-icon metric-icon-danger"><i class="bi bi-thermometer-sun"></i></div>
+    <div class="metric-value" id="kpi-sup">—</div>
+    <div class="metric-label">Superaquecimento</div>
+    <div class="metric-sub">°C</div>
+  </div>
+</div>
+
+<div id="diag-alerts" class="diag-alerts-row anim-fade-in-up" style="animation-delay:.08s;display:none">
+  <div class="diag-badge diag-danger" id="diag-bloqueio" style="display:none">
+    <i class="bi bi-exclamation-triangle-fill"></i>
+    <span><strong>Bloqueio de condensador</strong> — Razão PC/PS: <span id="diag-razao-val">—</span> (limite 3.5)</span>
+  </div>
+  <div class="diag-badge diag-warning" id="diag-subcarga" style="display:none">
+    <i class="bi bi-droplet-half"></i>
+    <span><strong>Subcarga de refrigerante</strong> — Superaquecimento: <span id="diag-sup-val">—</span>°C (limite 35°C)</span>
+  </div>
+  <div class="diag-badge diag-ok" id="diag-ok" style="display:none">
+    <i class="bi bi-check-circle-fill"></i>
+    <span>Sistema operando dentro dos parâmetros normais</span>
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-12 anim-fade-in-up" style="animation-delay:.1s">
+    <div class="card-panel">
+      <div class="panel-header">
+        <span class="panel-title">Pressão — Série Temporal (24h)</span>
+        <span class="panel-badge">eixo duplo</span>
+      </div>
+      <div class="chart-container position-relative">
+        <div class="loading-overlay" id="pressao-loading">
+          <div class="spinner-lg"></div>
+          <span>Selecione um dispositivo com dados de pressão</span>
+        </div>
+        <div id="chart-pressao"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12 col-md-6 anim-fade-in-up" style="animation-delay:.15s">
+    <div class="tech-note">
+      <strong>Razão PC/PS &gt; 3.5:</strong> Indica possível bloqueio no condensador ou calor excessivo no ambiente — requer verificação da ventilação e limpeza das aletas.
+    </div>
+  </div>
+  <div class="col-12 col-md-6 anim-fade-in-up" style="animation-delay:.2s">
+    <div class="tech-note">
+      <strong>Superaquecimento &gt; 35°C:</strong> Indica provável subcarga de refrigerante — gás insuficiente para saturar o evaporador. Verificar vazamentos e recarga.
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{{ url_for('static', filename='dashboards/pressao.js') }}"></script>
+{% endblock %}

@@ -217,31 +217,36 @@
       data: {
         labels: window.DASH.labels,
         datasets: [{
-          label: "Quantidade",
+          label: "Alarmes",
           data: window.DASH.data,
           backgroundColor: window.DASH.colors,
-          borderRadius: 6,
+          borderRadius: 4,
           borderSkipped: false,
+          barThickness: 28,
         }],
       },
       options: {
+        indexAxis: 'y',
         responsive: true,
-        maintainAspectRatio: true,
+        maintainAspectRatio: false,
         plugins: {
           legend: { display: false },
           tooltip: {
             callbacks: {
-              label: (c) => ` ${c.parsed.y} alarme(s)`,
+              label: (c) => ` ${c.parsed.x} alarme(s)`,
             },
           },
         },
         scales: {
-          y: {
+          x: {
             beginAtZero: true,
-            ticks: { stepSize: 1, precision: 0 },
-            grid: { color: "#f0f0f0" },
+            ticks: { stepSize: 1, precision: 0, color: 'rgba(242,240,235,0.45)', font: { size: 10 } },
+            grid: { color: 'rgba(255,255,255,0.055)' },
           },
-          x: { grid: { display: false } },
+          y: {
+            grid: { display: false },
+            ticks: { color: 'rgba(242,240,235,0.7)', font: { size: 11, weight: '600' } },
+          },
         },
       },
     });

@@ -1,0 +1,86 @@
+{% extends "dashboards/_base.html" %}
+
+{% block title %}Temperatura{% endblock %}
+{% block page_title %}Temperatura{% endblock %}
+{% block page_subtitle %}Série temporal + banda setpoint por dispositivo{% endblock %}
+
+{% block content %}
+<div class="dash-page-header anim-fade-in-up">
+  <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+    <div>
+      <h2><i class="bi bi-thermometer-half me-2" style="color:var(--c-crit)"></i>Temperatura</h2>
+      <p>Análise de temperatura vs setpoint com detecção de anomalias</p>
+    </div>
+    <div class="d-flex align-items-center gap-2">
+      <select class="device-selector" id="device-select">
+        <option value="">Selecione um dispositivo…</option>
+      </select>
+      <span class="last-update-badge" id="temp-update" style="display:none"><i class="bi bi-arrow-clockwise"></i>—</span>
+    </div>
+  </div>
+</div>
+
+<div class="dash-intro anim-fade-in-up" style="animation-delay:.03s">
+  <i class="bi bi-info-circle-fill"></i>
+  <p>Desvios persistentes acima do setpoint indicam falha de refrigeração ou degelo excessivo. A <strong>banda cinza</strong> representa a tolerância de ±2 °C ao redor do setpoint — leituras fora dessa banda por períodos prolongados acionam alertas de anomalia. Selecione um dispositivo para visualizar a série completa das últimas 24h.</p>
+</div>
+
+<div class="metric-grid anim-fade-in-up" id="temp-kpis" style="animation-delay:.05s">
+  <div class="metric-card">
+    <div class="metric-icon metric-icon-accent"><i class="bi bi-thermometer"></i></div>
+    <div class="metric-value" id="kpi-temp-media">—</div>
+    <div class="metric-label">Temp Média</div>
+  </div>
+  <div class="metric-card">
+    <div class="metric-icon metric-icon-danger"><i class="bi bi-thermometer-high"></i></div>
+    <div class="metric-value" id="kpi-temp-max">—</div>
+    <div class="metric-label">Temp Máxima</div>
+  </div>
+  <div class="metric-card">
+    <div class="metric-icon metric-icon-info"><i class="bi bi-sliders"></i></div>
+    <div class="metric-value" id="kpi-setpoint">—</div>
+    <div class="metric-label">Setpoint Médio</div>
+  </div>
+  <div class="metric-card">
+    <div class="metric-icon metric-icon-warning"><i class="bi bi-arrow-up-circle"></i></div>
+    <div class="metric-value" id="kpi-pct-acima">—</div>
+    <div class="metric-label">% Tempo Acima SP</div>
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-12 col-xl-8 anim-fade-in-up" style="animation-delay:.1s">
+    <div class="card-panel">
+      <div class="panel-header">
+        <span class="panel-title">Temperatura vs Setpoint (24h)</span>
+        <span class="panel-badge">5 min / ponto</span>
+      </div>
+      <div class="chart-container position-relative">
+        <div class="loading-overlay" id="temp-loading">
+          <div class="spinner-lg"></div>
+          <span>Selecione um dispositivo</span>
+        </div>
+        <div id="chart-temperatura"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12 col-xl-4 anim-fade-in-up" style="animation-delay:.15s">
+    <div class="card-panel h-100">
+      <div class="panel-header">
+        <span class="panel-title">Análise Estatística</span>
+      </div>
+      <div class="analysis-panel" id="temp-stats">
+        <div class="empty-chart" style="min-height:160px">
+          <i class="bi bi-bar-chart-line"></i>
+          <p>Selecione um dispositivo</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{{ url_for('static', filename='dashboards/temperatura.js') }}"></script>
+{% endblock %}

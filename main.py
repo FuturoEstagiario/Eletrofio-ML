@@ -166,6 +166,37 @@ def pipeline_real(args) -> None:
     imprimir_metricas("OneClassSVM", met_ocsvm)
     ocsvm.salvar(MODELS_DIR)
 
+    print("\n  [4b/5] Treinando SVM e Random Forest nos dados reais...")
+    import joblib
+    import numpy as np
+    from sklearn.model_selection import train_test_split as _tts
+    from sklearn.preprocessing import StandardScaler
+    from imblearn.over_sampling import SMOTE
+
+    df_feat_svm = pd.read_parquet("dados_coletados/features.parquet")
+    fc = get_feature_columns(df_feat_svm)
+    X_r = np.nan_to_num(df_feat_svm[fc].values, nan=0.0)
+    y_r = df_feat_svm["anomalo"].values.astype(int)
+    X_tr, X_te, y_tr, y_te = _tts(X_r, y_r, test_size=0.2, random_state=42, stratify=y_r)
+    sc = StandardScaler()
+    X_tr = sc.fit_transform(X_tr)
+    X_te = sc.transform(X_te)
+    n_pos = int(y_tr.sum())
+    n_neg = int((y_tr == 0).sum())
+    if n_pos >= 5 and n_neg / max(n_pos, 1) > 3:
+        X_tr, y_tr = SMOTE(random_state=42).fit_resample(X_tr, y_tr)
+        print(f"    SMOTE aplicado -> {(y_tr==0).sum()} normais / {y_tr.sum()} anomalos")
+    svm_r = SVMModel()
+    svm_r.treinar(X_tr, y_tr, busca_hiperpar=not args.sem_busca)
+    imprimir_metricas("SVM (dados reais)", svm_r.avaliar(X_te, y_te))
+    svm_r.salvar(os.path.join(MODELS_DIR, "svm_eletrofrio.pkl"))
+    rf_r = RandomForestModel()
+    rf_r.treinar(X_tr, y_tr, busca_hiperpar=not args.sem_busca)
+    imprimir_metricas("RF (dados reais)", rf_r.avaliar(X_te, y_te))
+    rf_r.salvar(os.path.join(MODELS_DIR, "rf_eletrofrio.pkl"))
+    joblib.dump(sc, os.path.join(MODELS_DIR, "scaler_real.pkl"))
+    joblib.dump(fc, os.path.join(MODELS_DIR, "feature_cols.pkl"))
+
     print("\n  [5/5] Grid Search e avaliacao detalhada...")
     if len(df_anomalos) > 0:
         resultados_gs = grid_search(df_normais, df_anomalos, feature_cols)

@@ -1,0 +1,187 @@
+{% extends "dashboards/_base.html" %}
+
+{% block title %}Impacto Financeiro{% endblock %}
+{% block page_title %}Impacto Financeiro{% endblock %}
+{% block page_subtitle %}ROI de intervenção e exposição ao risco por device{% endblock %}
+
+{% block content %}
+<div class="dash-page-header anim-fade-in-up">
+  <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+    <div>
+      <h2><i class="bi bi-currency-exchange me-2" style="color:#4ade80"></i>Impacto Financeiro</h2>
+      <p>Exposição ao risco de parada, ROI de intervenção e prioridade de manutenção por device</p>
+    </div>
+    <span class="last-update-badge" id="fin-update" style="display:none"><i class="bi bi-arrow-clockwise"></i>—</span>
+  </div>
+</div>
+
+<div class="dash-intro anim-fade-in-up" style="animation-delay:.03s">
+  <i class="bi bi-info-circle-fill"></i>
+  <p>Quantifica o <strong>risco financeiro real</strong> de cada compressor: multiplica o score ML pela taxa de custo de parada da sua criticidade, extrapolando para 24h. O <strong>ROI</strong> compara a exposição diária ao custo fixo de R$&nbsp;450 de uma intervenção preventiva — quando positivo, intervir hoje é sempre mais barato do que aguardar a falha.</p>
+</div>
+
+<!-- KPIs -->
+<div class="metric-grid anim-fade-in-up" id="fin-kpis" style="animation-delay:.05s">
+  <div class="metric-card">
+    <div class="metric-icon" style="background:rgba(239,68,68,.12);color:#ef4444"><i class="bi bi-currency-dollar"></i></div>
+    <div class="metric-value" id="kpi-exp-diaria" style="color:#ef4444;font-size:1rem">—</div>
+    <div class="metric-label">Exposição Diária Total</div>
+  </div>
+  <div class="metric-card">
+    <div class="metric-icon" style="background:rgba(249,115,22,.12);color:#f97316"><i class="bi bi-calendar-week"></i></div>
+    <div class="metric-value" id="kpi-exp-semanal" style="font-size:1rem">—</div>
+    <div class="metric-label">Exposição Semanal</div>
+  </div>
+  <div class="metric-card">
+    <div class="metric-icon metric-icon-danger"><i class="bi bi-exclamation-octagon-fill"></i></div>
+    <div class="metric-value" id="kpi-urgentes">—</div>
+    <div class="metric-label">Intervenções Urgentes</div>
+  </div>
+  <div class="metric-card">
+    <div class="metric-icon" style="background:rgba(34,197,94,.1);color:#4ade80"><i class="bi bi-piggy-bank-fill"></i></div>
+    <div class="metric-value" id="kpi-economia" style="color:#4ade80;font-size:1rem">—</div>
+    <div class="metric-label">Economia Potencial/dia</div>
+  </div>
+  <div class="metric-card">
+    <div class="metric-icon" style="background:rgba(168,149,110,.12);color:var(--beige)"><i class="bi bi-tools"></i></div>
+    <div class="metric-value" id="kpi-investimento" style="font-size:1rem">—</div>
+    <div class="metric-label">Invest. Recomendado</div>
+  </div>
+  <div class="metric-card">
+    <div class="metric-icon metric-icon-accent"><i class="bi bi-graph-up-arrow"></i></div>
+    <div class="metric-value" id="kpi-roi-medio">—</div>
+    <div class="metric-label">ROI Médio (×)</div>
+  </div>
+</div>
+
+<div class="row g-3">
+
+  <!-- Top 10 devices -->
+  <div class="col-12 col-lg-7 anim-fade-in-up" style="animation-delay:.08s">
+    <div class="card-panel h-100">
+      <div class="panel-header">
+        <span class="panel-title">Top 10 — Maior Exposição Diária</span>
+        <span class="panel-badge">R$/dia</span>
+      </div>
+      <div class="chart-container" style="height:280px">
+        <canvas id="chart-top-devices"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- Donut recomendação -->
+  <div class="col-12 col-lg-5 anim-fade-in-up" style="animation-delay:.1s">
+    <div class="card-panel h-100">
+      <div class="panel-header">
+        <span class="panel-title">Distribuição por Recomendação</span>
+        <span class="panel-badge">devices</span>
+      </div>
+      <div class="chart-container" style="height:280px;display:flex;align-items:center;justify-content:center">
+        <canvas id="chart-recomendacao"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- Lojas -->
+  <div class="col-12 col-lg-6 anim-fade-in-up" style="animation-delay:.12s">
+    <div class="card-panel h-100">
+      <div class="panel-header">
+        <span class="panel-title">Exposição por Loja</span>
+        <span class="panel-badge">R$/dia · urgentes</span>
+      </div>
+      <div class="chart-container" style="height:260px">
+        <canvas id="chart-lojas"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scatter score vs exposição -->
+  <div class="col-12 col-lg-6 anim-fade-in-up" style="animation-delay:.14s">
+    <div class="card-panel h-100">
+      <div class="panel-header">
+        <span class="panel-title">Score ML × Exposição Financeira</span>
+        <span class="panel-badge">por criticidade</span>
+      </div>
+      <div class="chart-container" style="height:260px">
+        <canvas id="chart-scatter"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tabela completa -->
+  <div class="col-12 anim-fade-in-up" style="animation-delay:.16s">
+    <div class="card-panel">
+      <div class="panel-header flex-wrap gap-2">
+        <div class="d-flex align-items-center gap-2">
+          <span class="panel-title">Análise por Dispositivo</span>
+          <span class="panel-count" id="fin-count">—</span>
+        </div>
+        <div class="filter-bar" style="padding:0">
+          <span class="filter-label">Filtrar:</span>
+          <select class="filter-select" id="rec-filter">
+            <option value="">Todas recomendações</option>
+            <option value="Urgente">Urgente</option>
+            <option value="Recomendado">Recomendado</option>
+            <option value="Monitorar">Monitorar</option>
+            <option value="Normal">Normal</option>
+          </select>
+          <select class="filter-select" id="crit-filter-fin">
+            <option value="">Todas criticidades</option>
+            <option value="C">C — Crítica</option>
+            <option value="A">A — Alta</option>
+            <option value="M">M — Média</option>
+            <option value="B">B — Baixa</option>
+            <option value="I">I — Info</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="position-relative">
+        <div class="loading-overlay" id="fin-loading">
+          <div class="spinner-lg"></div>
+          <span>Calculando impacto financeiro…</span>
+        </div>
+        <div class="table-responsive">
+          <table class="data-table" id="fin-table">
+            <thead>
+              <tr>
+                <th>Recomendação</th>
+                <th>Dispositivo</th>
+                <th>Loja</th>
+                <th class="num-col" title="Nível de criticidade do alarme">Crit.</th>
+                <th class="num-col" title="Score de risco do modelo ML (0–100%)">Score ML</th>
+                <th class="num-col" title="Custo estimado de parada por hora (R$/h)">R$/hora</th>
+                <th class="num-col" title="Exposição ao risco de parada em 24h">Expo/dia</th>
+                <th class="num-col" title="Exposição projetada para 7 dias">Expo/semana</th>
+                <th class="num-col" title="Retorno sobre investimento: Exposição/dia ÷ R$450">ROI ×</th>
+                <th class="num-col" title="Economia potencial se intervenção for feita hoje">Econ./dia</th>
+              </tr>
+            </thead>
+            <tbody id="fin-tbody"></tbody>
+          </table>
+        </div>
+        <div class="empty-chart" id="fin-empty" style="display:none;min-height:180px">
+          <i class="bi bi-currency-exchange"></i>
+          <p>Nenhum dado financeiro disponível</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Premissas -->
+  <div class="col-12 anim-fade-in-up" style="animation-delay:.18s">
+    <div class="card-panel">
+      <div class="panel-header">
+        <span class="panel-title"><i class="bi bi-info-circle me-2 opacity-50"></i>Premissas do Modelo</span>
+        <span class="panel-badge">custo de parada estimado por criticidade</span>
+      </div>
+      <div id="assumpcoes-grid" class="row g-2 mt-1"></div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{{ url_for('static', filename='dashboards/financeiro.js') }}"></script>
+{% endblock %}
