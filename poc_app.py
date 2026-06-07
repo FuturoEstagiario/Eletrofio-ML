@@ -73,6 +73,13 @@ except Exception as _e:
 _pipeline_lock  = threading.Lock()
 _pipeline_state = {"last_collection": None, "last_training": None, "devices_at_last_train": 0}
 
+try:
+    from src.db import init_tables as _init_db_tables
+    _init_db_tables()
+    log.info("DB: tabela 'chamados' inicializada")
+except Exception as _e:
+    log.warning(f"DB: init_tables falhou (chamados guardados em memória): {_e}")
+
 
 class _NaNSafeProvider(DefaultJSONProvider):
     @staticmethod
@@ -644,6 +651,21 @@ def api_abrir_chamado():
         "origem": "api",
     }
 
+    # Persistir no PostgreSQL independente de a API externa estar disponível
+    try:
+        from src.db import inserir_chamado
+        entry["id"] = inserir_chamado(
+            dispositivo_id=int(body["dispositivo_id"]),
+            loja_id=int(body["loja_id"]),
+            loja_nome=str(body["loja_nome"]),
+            tag=str(body["tag"]),
+            motivo=str(body["motivo_ia"]),
+            tecnico_presencial=bool(body.get("requer_tecnico", True)),
+        )
+        log.info(f"Chamado id={entry['id']} persistido no PostgreSQL — device {body['dispositivo_id']}")
+    except Exception as db_e:
+        log.warning(f"DB inserir_chamado falhou: {db_e}")
+
     try:
         resposta = abrir_chamado(
             loja_id=int(body["loja_id"]),
@@ -794,8 +816,37 @@ def api_dashboard_saude():
 @app.route("/api/dashboard/chamados")
 def api_dashboard_chamados():
     try:
+        from src.db import listar_chamados
+        rows = listar_chamados()
+        dados = [
+            {
+                "id":                 r["id"],
+                "ts":                 r["criado_em"].isoformat() if r["criado_em"] else None,
+                "dispositivo_id":     r["dispositivo_id"],
+                "loja_nome":          r["loja_nome"],
+                "tag":                r["tag"],
+                "motivo":             r["motivo"],
+                "status":             r["status"],
+                "tecnico_presencial": r["tecnico_presencial"],
+                "resolvido_em":       r["resolvido_em"].isoformat() if r["resolvido_em"] else None,
+            }
+            for r in rows
+        ]
+        return jsonify({"status": "ok", "dados": dados})
+    except Exception as e:
+        log.warning(f"DB listar_chamados falhou: {e} — usando cache em memória")
         dados = list(reversed(_cache["chamados_log"]))[:100]
         return jsonify({"status": "ok", "dados": dados})
+
+
+@app.route("/api/chamados/<int:chamado_id>/resolver", methods=["PATCH"])
+def api_resolver_chamado(chamado_id):
+    try:
+        from src.db import resolver_chamado
+        ok = resolver_chamado(chamado_id)
+        if ok:
+            return jsonify({"status": "ok", "chamado_id": chamado_id})
+        return jsonify({"status": "erro", "mensagem": "Chamado não encontrado ou já fechado"}), 404
     except Exception as e:
         return jsonify({"status": "erro", "mensagem": str(e)}), 500
 

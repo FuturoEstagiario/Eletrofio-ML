@@ -19,7 +19,18 @@ function updateKPIs(dados) {
   const abertos = dados.filter(d => d.status === 'aberto').length;
   document.getElementById('kpi-abertos').textContent = abertos;
 
-  document.getElementById('kpi-score-medio').textContent = '—';
+  const fechados = dados.filter(d => d.status === 'fechado').length;
+  document.getElementById('kpi-score-medio').textContent = fechados;
+}
+
+async function resolverChamado(id) {
+  try {
+    const res = await fetch(`/api/chamados/${id}/resolver`, { method: 'PATCH' });
+    const json = await res.json();
+    if (json.status === 'ok') loadData();
+  } catch (err) {
+    console.error('Erro ao resolver chamado:', err);
+  }
 }
 
 function renderTable(dados) {
@@ -43,6 +54,10 @@ function renderTable(dados) {
       ? '<span class="badge-status-fechado">Fechado</span>'
       : '<span class="badge-status-aberto">Aberto</span>';
 
+    const acaoBtn = d.status === 'aberto' && d.id
+      ? `<button onclick="resolverChamado(${d.id})" style="font-size:.72rem;padding:2px 8px;border:1px solid #22c55e;background:transparent;color:#22c55e;border-radius:4px;cursor:pointer" title="Marcar como resolvido"><i class="bi bi-check2"></i> Resolver</button>`
+      : '<span style="color:var(--muted);font-size:.72rem">—</span>';
+
     return `<tr>
       <td style="font-size:.75rem;white-space:nowrap">${formatTs(d.ts)}</td>
       <td>
@@ -53,6 +68,7 @@ function renderTable(dados) {
       <td class="num-col" style="font-size:.78rem">—</td>
       <td style="font-size:.78rem;max-width:200px">${motivoTrunc}</td>
       <td class="text-center">${statusBadge}</td>
+      <td class="text-center">${acaoBtn}</td>
     </tr>`;
   }).join('');
 }
