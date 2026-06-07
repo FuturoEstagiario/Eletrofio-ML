@@ -65,6 +65,11 @@ app.wsgi_app = WhiteNoise(app.wsgi_app, root="views/", prefix="static")
 _BASE_DIR    = os.path.dirname(os.path.abspath(__file__))
 _PARQUET_DIR = os.path.join(_BASE_DIR, "dados_coletados")
 
+print(f"[EF] BASE_DIR    : {_BASE_DIR}")
+print(f"[EF] PARQUET_DIR : {_PARQUET_DIR}")
+print(f"[EF] alarmes.parquet existe: {os.path.exists(os.path.join(_PARQUET_DIR, 'alarmes.parquet'))}")
+print(f"[EF] unidades.parquet existe: {os.path.exists(os.path.join(_PARQUET_DIR, 'unidades.parquet'))}")
+
 _cache = {
     "alarmes_raw": [], "unidades": [],
     "tele_features": {},
@@ -79,31 +84,45 @@ CACHE_TTL = 600
 
 def _fetch_background():
     while True:
+        print("[EF] --- início do ciclo de cache ---")
         try:
+            print("[EF] Buscando alarmes da API...")
             _cache["alarmes_raw"] = buscar_alarmes()
             _cache["api_ok"] = True
             _cache["data_ok"] = True
-        except Exception:
+            print(f"[EF] API alarmes OK — {len(_cache['alarmes_raw'])} registos")
+        except Exception as e:
+            print(f"[EF] API alarmes ERRO: {e}")
             _cache["api_ok"] = False
+            parquet_path = os.path.join(_PARQUET_DIR, "alarmes.parquet")
+            print(f"[EF] Fallback parquet: {parquet_path}")
             try:
-                df = pd.read_parquet(os.path.join(_PARQUET_DIR, "alarmes.parquet"))
+                df = pd.read_parquet(parquet_path)
                 _cache["alarmes_raw"] = df.where(pd.notnull(df), None).to_dict("records")
                 _cache["data_ok"] = True
-            except Exception:
-                pass
+                print(f"[EF] Parquet alarmes OK — {len(_cache['alarmes_raw'])} registos")
+            except Exception as pe:
+                print(f"[EF] Parquet alarmes ERRO: {pe}")
         try:
+            print("[EF] Buscando unidades da API...")
             _cache["unidades"] = buscar_unidades()
-        except Exception:
+            print(f"[EF] API unidades OK — {len(_cache['unidades'])} registos")
+        except Exception as e:
+            print(f"[EF] API unidades ERRO: {e}")
+            parquet_path = os.path.join(_PARQUET_DIR, "unidades.parquet")
             try:
-                df = pd.read_parquet(os.path.join(_PARQUET_DIR, "unidades.parquet"))
+                df = pd.read_parquet(parquet_path)
                 _cache["unidades"] = df.where(pd.notnull(df), None).to_dict("records")
-            except Exception:
-                pass
+                print(f"[EF] Parquet unidades OK — {len(_cache['unidades'])} registos")
+            except Exception as pe:
+                print(f"[EF] Parquet unidades ERRO: {pe}")
         _cache["ts"] = time.time()
+        print(f"[EF] Cache: api_ok={_cache['api_ok']} data_ok={_cache['data_ok']} alarmes={len(_cache['alarmes_raw'])} unidades={len(_cache['unidades'])}")
 
         _PRIO = {"C": 0, "A": 1, "M": 2, "B": 3, "I": 4}
         _sorted = sorted(_cache["alarmes_raw"], key=lambda a: _PRIO.get(a.get("criticidade", "I"), 99))
         device_ids = list(dict.fromkeys(a.get("dispositivoId") for a in _sorted if a.get("dispositivoId")))[:30]
+        print(f"[EF] Telemetria: {len(device_ids)} devices a buscar")
         for did in device_ids:
             try:
                 raw = buscar_telemetria(did)
@@ -119,6 +138,8 @@ def _fetch_background():
                 pass
             time.sleep(0.15)
         _cache["ts_tele"] = time.time()
+        print(f"[EF] Telemetria concluída — {len(_cache['tele_features'])} devices com features")
+        print(f"[EF] Próximo ciclo em {CACHE_TTL}s")
 
         time.sleep(CACHE_TTL)
 
