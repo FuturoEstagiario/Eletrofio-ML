@@ -72,19 +72,11 @@
       <h1>Monitoramento Preditivo</h1>
       <span class="topbar-sub">Compressores de Refrigeração</span>
     </div>
-    <div class="topbar-search">
-      <i class="bi bi-search search-icon"></i>
-      <input type="search" placeholder="Buscar dispositivo, loja…" autocomplete="off" />
-    </div>
     <div class="topbar-right">
       {% if erros %}
       <span class="topbar-badge-err"><i class="bi bi-exclamation-triangle-fill"></i> Erro API</span>
       {% endif %}
       <span class="topbar-ts"><i class="bi bi-clock me-1"></i>{{ atualizado }}</span>
-      <button class="topbar-notif" title="Alertas activos">
-        <i class="bi bi-bell"></i>
-        <span class="notif-dot"></span>
-      </button>
       <div class="topbar-avatar" title="Administrador">AD</div>
     </div>
   </header>

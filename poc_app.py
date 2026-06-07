@@ -597,6 +597,84 @@ def api_dashboard_financeiro():
         return jsonify({"status": "erro", "mensagem": str(e)}), 500
 
 
+@app.route("/dashboards/modelo")
+def dashboard_modelo():
+    return render_template("dashboards/modelo.html", active_page="modelo")
+
+
+@app.route("/api/dashboard/modelo")
+def api_dashboard_modelo():
+    try:
+        rf = _modelos.get("rf")
+        ocsvm = _modelos.get("ocsvm")
+
+        feature_importance = []
+        modelo_info = {}
+
+        if rf is not None:
+            try:
+                clf = rf.modelo if hasattr(rf, "modelo") else rf
+                importances = clf.feature_importances_.tolist()
+                feature_cols = [
+                    "temp_media", "temp_maxima", "temp_minima",
+                    "temp_amplitude", "temp_volatilidade", "temp_tendencia",
+                ]
+                feature_importance = sorted(
+                    [{"feature": f, "importancia": round(v, 4)} for f, v in zip(feature_cols, importances)],
+                    key=lambda x: -x["importancia"],
+                )
+                modelo_info["rf"] = {
+                    "tipo": "Random Forest",
+                    "n_estimators": int(getattr(clf, "n_estimators", 0)),
+                    "n_features": int(getattr(clf, "n_features_in_", len(feature_cols))),
+                    "carregado": True,
+                }
+            except Exception:
+                modelo_info["rf"] = {"tipo": "Random Forest", "carregado": True, "erro": "Não foi possível extrair metadados"}
+
+        if ocsvm is not None:
+            try:
+                clf_svm = ocsvm.modelo if hasattr(ocsvm, "modelo") else ocsvm
+                modelo_info["ocsvm"] = {
+                    "tipo": "OneClass SVM",
+                    "kernel": str(getattr(clf_svm, "kernel", "rbf")),
+                    "nu": float(getattr(clf_svm, "nu", 0)),
+                    "n_support": int(getattr(clf_svm, "n_support_", [0])[0]) if hasattr(clf_svm, "n_support_") else 0,
+                    "carregado": True,
+                }
+            except Exception:
+                modelo_info["ocsvm"] = {"tipo": "OneClass SVM", "carregado": True, "erro": "Não foi possível extrair metadados"}
+
+        scores = [d.get("risk_score") for d in _cache.get("tele_features", {}).values() if isinstance(d, dict) and d.get("risk_score") is not None]
+        if not scores and _cache.get("alarmes_raw"):
+            from src.dashboard_service import risco_tabela as _rt
+            tabela = _rt(_cache["alarmes_raw"], _cache["tele_features"], _modelos)
+            scores = [d["risk_score"] for d in tabela if d.get("risk_score") is not None]
+
+        distribuicao = {"baixo": 0, "medio": 0, "alto": 0}
+        for s in scores:
+            if s < 0.4:
+                distribuicao["baixo"] += 1
+            elif s < 0.7:
+                distribuicao["medio"] += 1
+            else:
+                distribuicao["alto"] += 1
+
+        return jsonify({
+            "status": "ok",
+            "dados": {
+                "feature_importance": feature_importance,
+                "modelo_info": modelo_info,
+                "score_distribuicao": distribuicao,
+                "n_devices_scored": len(scores),
+                "score_medio": round(float(np.mean(scores)), 4) if scores else None,
+                "modelos_carregados": _modelos_carregados,
+            },
+        })
+    except Exception as e:
+        return jsonify({"status": "erro", "mensagem": str(e)}), 500
+
+
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

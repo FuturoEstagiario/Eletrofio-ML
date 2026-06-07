@@ -195,3 +195,4 @@ async function loadData() {
 }
 
 loadData();
+setInterval(loadData, 60000);

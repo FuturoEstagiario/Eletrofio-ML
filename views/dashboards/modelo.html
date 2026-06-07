@@ -1,0 +1,95 @@
+{% extends "dashboards/_base.html" %}
+
+{% block title %}Qualidade do Modelo{% endblock %}
+{% block page_title %}Qualidade do Modelo{% endblock %}
+{% block page_subtitle %}Transparência e rastreabilidade dos modelos ML{% endblock %}
+
+{% block content %}
+<div class="dash-page-header anim-fade-in-up">
+  <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+    <div>
+      <h2><i class="bi bi-cpu-fill me-2" style="color:var(--accent)"></i>Qualidade do Modelo</h2>
+      <p>Métricas de transparência dos modelos Random Forest e OneClass SVM</p>
+    </div>
+    <span class="last-update-badge" id="modelo-update"><i class="bi bi-arrow-clockwise"></i>—</span>
+  </div>
+</div>
+
+<div class="dash-intro anim-fade-in-up" style="animation-delay:.03s">
+  <i class="bi bi-info-circle-fill"></i>
+  <p>A <strong>feature importance</strong> indica quais variáveis de temperatura o modelo considera mais relevantes para prever falhas. Um modelo bem calibrado distribui a importância entre múltiplas features — dominância excessiva de uma única variável pode indicar overfitting ou dados enviesados.</p>
+</div>
+
+<div class="metric-grid anim-fade-in-up" style="animation-delay:.05s">
+  <div class="metric-card">
+    <div class="metric-icon metric-icon-accent"><i class="bi bi-cpu"></i></div>
+    <div class="metric-value" id="kpi-modelo-tipo">—</div>
+    <div class="metric-label">Modelo principal</div>
+  </div>
+  <div class="metric-card">
+    <div class="metric-icon metric-icon-info"><i class="bi bi-diagram-3"></i></div>
+    <div class="metric-value" id="kpi-n-estimators">—</div>
+    <div class="metric-label">Nº de estimadores (RF)</div>
+  </div>
+  <div class="metric-card">
+    <div class="metric-icon metric-icon-warning"><i class="bi bi-bullseye"></i></div>
+    <div class="metric-value" id="kpi-score-medio">—</div>
+    <div class="metric-label">Score médio da frota</div>
+  </div>
+  <div class="metric-card">
+    <div class="metric-icon metric-icon-success"><i class="bi bi-check2-circle"></i></div>
+    <div class="metric-value" id="kpi-n-scored">—</div>
+    <div class="metric-label">Devices com score</div>
+  </div>
+</div>
+
+<div class="row g-3 mt-1">
+  <div class="col-12 col-xl-7 anim-fade-in-up" style="animation-delay:.08s">
+    <div class="card-panel h-100">
+      <div class="panel-header">
+        <span class="panel-title">Feature Importance — Random Forest</span>
+      </div>
+      <div class="position-relative" style="min-height:280px">
+        <div class="loading-overlay" id="modelo-loading"><div class="spinner-lg"></div><span>Carregando…</span></div>
+        <div class="chart-container-sm">
+          <canvas id="chart-importance"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12 col-xl-5 anim-fade-in-up" style="animation-delay:.1s">
+    <div class="card-panel h-100">
+      <div class="panel-header">
+        <span class="panel-title">Distribuição de Scores</span>
+      </div>
+      <div class="chart-container-sm">
+        <canvas id="chart-scores"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3 mt-1">
+  <div class="col-12 col-md-6 anim-fade-in-up" style="animation-delay:.12s">
+    <div class="card-panel">
+      <div class="panel-header"><span class="panel-title">Random Forest</span></div>
+      <div id="info-rf" style="padding:.8rem 1rem;font-size:.83rem">
+        <div class="empty-chart" style="min-height:120px"><i class="bi bi-cpu"></i><p>Modelo não carregado</p></div>
+      </div>
+    </div>
+  </div>
+  <div class="col-12 col-md-6 anim-fade-in-up" style="animation-delay:.14s">
+    <div class="card-panel">
+      <div class="panel-header"><span class="panel-title">OneClass SVM</span></div>
+      <div id="info-ocsvm" style="padding:.8rem 1rem;font-size:.83rem">
+        <div class="empty-chart" style="min-height:120px"><i class="bi bi-shield-exclamation"></i><p>Modelo não carregado</p></div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{{ url_for('static', filename='dashboards/modelo.js') }}"></script>
+{% endblock %}

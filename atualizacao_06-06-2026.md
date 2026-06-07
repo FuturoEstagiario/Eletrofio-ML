@@ -343,6 +343,166 @@ top10 = sorted(devices, key=lambda d: (CRIT_ORDER.get(d["criticidade"], 99), -(d
 
 ---
 
+## 14. Fix Deploy Render — Fallback Parquet + Timeout *(sessão continuação)*
+
+**Ficheiros:** [`src/config.py`](src/config.py) · [`poc_app.py`](poc_app.py)
+
+**Causa raiz:** A API externa usa a porta **5900** (não-standard), bloqueada por padrão no Render e na maioria dos serviços cloud. `API_TIMEOUT = 300` agravava o problema — o thread de background bloqueava até 5 minutos em cada chamada, mantendo `_cache["ts"] = None` e a página em "Carregando" indefinidamente.
+
+### Fixes aplicados
+
+| Problema | Fix |
+|---|---|
+| Porta 5900 bloqueada no Render | Fallback automático para parquets locais |
+| `API_TIMEOUT = 300` bloqueia o thread | Reduzido para `12s` — fail fast |
+| Página mostra "Carregando" forever | `_cache["ts"]` inicializado com `time.time()` no startup |
+| `/api/health` fazia chamada live a cada 30s | Substituído por `_cache.get("api_ok", False)` |
+| Telemetria de 50+ devices × 300s timeout | Limitada aos **top 30 devices** por criticidade |
+
+### Fallback Parquet
+
+Quando `buscar_alarmes()` lança excepção (API inacessível), o thread carrega automaticamente:
+- `dados_coletados/alarmes.parquet` → 126 alarmes com estrutura idêntica à API
+- `dados_coletados/unidades.parquet` → 314 unidades
+
+```python
+# _cache["api_ok"] = False quando usando parquet
+# _cache["data_ok"] = True quando há dados disponíveis (API ou parquet)
+```
+
+O dashboard usa `data_ok` para controlar o banner de erro — dados do parquet aparecem normalmente, apenas o indicador "API indisponível" no rodapé sinaliza o fallback.
+
+---
+
+## 15. Auto-Refresh Silencioso — Todos os Dashboards *(sessão continuação)*
+
+**Ficheiros:** [`saude.js`](views/dashboards/saude.js) · [`alarmes_loja.js`](views/dashboards/alarmes_loja.js) · [`degelo.js`](views/dashboards/degelo.js) · [`financeiro.js`](views/dashboards/financeiro.js)
+
+Adicionado `setInterval` nos dashboards que não tinham polling automático:
+
+| Dashboard | Intervalo | Função |
+|---|---|---|
+| Saúde da Frota | 60s | `loadData()` |
+| Alarmes/Loja | 60s | `loadData()` |
+| Degelo | 60s | `loadData()` |
+| Impacto Financeiro | 120s | `loadFinanceiro()` (mais pesado) |
+
+Risco e Chamados já tinham `setInterval` — mantidos inalterados.
+
+---
+
+## 16. Exportação CSV — Mapa de Risco e Financeiro *(sessão continuação)*
+
+**Ficheiros:** [`_base.html`](views/dashboards/_base.html) · [`risco.js`](views/dashboards/risco.js) · [`financeiro.js`](views/dashboards/financeiro.js)
+
+### Utilitário global `exportarCSV` (`_base.html`)
+
+```javascript
+function exportarCSV(headers, rows, filename) { ... }
+```
+
+- BOM `﻿` incluído para compatibilidade com Excel (UTF-8 com acentos)
+- Disponível em todos os dashboards via herança do template base
+
+### Botão "CSV" injectado dinamicamente
+
+Após o primeiro carregamento bem-sucedido, um botão `<i class="bi bi-download"> CSV` é injectado programaticamente junto ao badge de timestamp — sem alteração no HTML estático.
+
+**Campos exportados:**
+
+| Dashboard | Colunas |
+|---|---|
+| Mapa de Risco | Criticidade, Dispositivo, ID, Loja, Score ML, Temp Atual, Erro Temp, Volatilidade, Degelo %, Sem Tratativa |
+| Impacto Financeiro | Recomendação, Dispositivo, ID, Loja, Criticidade, Score ML, R$/hora, Exposição/dia, Exposição/semana, ROI ×, Economia/dia |
+
+---
+
+## 17. Horizonte Temporal de Falha *(sessão continuação)*
+
+**Ficheiro:** [`views/dashboards/risco.js`](views/dashboards/risco.js)
+
+Função `estimarDiasFalha(deviceId)` usa **regressão linear** nos pontos do histórico `localStorage` para projectar quando o score composto atingirá o limiar de falha (0,85).
+
+### Algoritmo
+
+```
+xs = timestamps convertidos em dias relativos a "agora" (negativos = passado)
+ys = scores compostos históricos
+slope, intercept = regressão linear mínimos quadrados
+dias = (0.85 − intercept) / slope
+```
+
+**Condições para exibir:**
+- Mínimo 3 pontos históricos
+- `slope > 0.001` (tendência de agravamento)
+- `0 < dias ≤ 365` (projecção realista)
+
+**Cores do badge:**
+- 🟢 Verde → > 30 dias
+- 🟡 Amarelo → ≤ 30 dias
+- 🔴 Vermelho → ≤ 7 dias (urgente)
+
+> **Limitação:** o histórico é armazenado por sessão de browser (localStorage). Sessões curtas ou múltiplos utilizadores têm menos pontos e projectam com menor precisão.
+
+---
+
+## 18. Early Warning Patterns *(sessão continuação)*
+
+**Ficheiros:** [`src/dashboard_service.py`](src/dashboard_service.py) · [`views/dashboards/risco.js`](views/dashboards/risco.js)
+
+### Backend — `_early_warnings(feats)` (`dashboard_service.py`)
+
+Detecta 4 padrões pré-falha nas features de telemetria de cada device:
+
+| Código | Condição | Cor |
+|---|---|---|
+| `temp_subindo` | `temp_taxa_variacao_media > 0.08°C/leitura` | Laranja |
+| `degelo_elevado` | `degelo_fracao > 30%` | Azul |
+| `acima_setpoint` | `temp_erro > 5°C` **e** tendência positiva | Vermelho |
+| `temp_instavel` | `temp_std > 2.5°C` | Amarelo |
+
+Retornados como lista `alertas` em cada registo de `risco_tabela()`.
+
+### Frontend — badges na coluna Score (`risco.js`)
+
+Cada alerta renderiza um badge inline colorido com ícone e texto curto:
+```
+🌡 Temp subindo   ❄ Degelo elevado   ↑ Acima setpoint   〜 Temp instável
+```
+
+> **Dependência:** early warnings só aparecem com telemetria disponível (API acessível ou tele_features preenchidas). No deploy Render com parquet, os alertas ficam vazios — a coluna Score mantém-se limpa sem quebrar.
+
+---
+
+## 19. Novo Dashboard — Qualidade do Modelo *(sessão continuação)*
+
+**Ficheiros criados:**
+- [`views/dashboards/modelo.html`](views/dashboards/modelo.html)
+- [`views/dashboards/modelo.js`](views/dashboards/modelo.js)
+
+**Back-end:**
+- [`poc_app.py`](poc_app.py) — rotas `/dashboards/modelo` e `/api/dashboard/modelo`
+
+### Conteúdo
+
+**4 KPI Cards:**
+1. Modelo principal (RF ou OC-SVM)
+2. Nº de estimadores do Random Forest
+3. Score médio da frota actual
+4. Nº de devices com score calculado
+
+**2 Gráficos:**
+1. **Feature Importance** — barras horizontais Chart.js com código de cor por relevância: vermelho ≥ 25%, laranja ≥ 15%, amarelo ≥ 8%, azul < 8%. Tooltip explica o significado de cada feature.
+2. **Distribuição de Scores** — donut tricolor: verde (baixo risco <40%), amarelo (médio 40–70%), vermelho (alto >70%).
+
+**2 Cards de Metadados:**
+- **Random Forest:** `n_estimators`, `n_features_in`
+- **OneClass SVM:** `kernel`, `nu`, `n_support` (vectores de suporte)
+
+Ambos degradam graciosamente quando o modelo não está carregado, exibindo instrução `python main.py --real`.
+
+---
+
 ## Resumo de Ficheiros
 
 ### Criados (novos)
@@ -352,23 +512,28 @@ top10 = sorted(devices, key=lambda d: (CRIT_ORDER.get(d["criticidade"], 99), -(d
 | [`views/dashboards/saude.js`](views/dashboards/saude.js) | JS | Lógica e gráficos do dashboard Saúde |
 | [`views/dashboards/financeiro.html`](views/dashboards/financeiro.html) | HTML | Dashboard Impacto Financeiro |
 | [`views/dashboards/financeiro.js`](views/dashboards/financeiro.js) | JS | Lógica, gráficos e tabela financeira |
+| [`views/dashboards/modelo.html`](views/dashboards/modelo.html) | HTML | Dashboard Qualidade do Modelo |
+| [`views/dashboards/modelo.js`](views/dashboards/modelo.js) | JS | Feature importance, distribuição de scores, metadados |
 
 ### Modificados
 | Ficheiro | Alteração |
 |---|---|
-| [`src/dashboard_service.py`](src/dashboard_service.py) | +`saude_frota()` +`financeiro_impacto()` + constantes + `loja_id` em `risco_tabela()` + top10 sort fix |
-| [`poc_app.py`](poc_app.py) | +4 rotas (saude html/api + financeiro html/api) + import atualizado |
-| [`views/index.html`](views/index.html) | KPI cards redesenhados + nav links Saúde e Financeiro |
+| [`src/config.py`](src/config.py) | `API_TIMEOUT: 300 → 12` |
+| [`src/dashboard_service.py`](src/dashboard_service.py) | +`saude_frota()` +`financeiro_impacto()` + `loja_id` + top10 sort fix + `_early_warnings()` em `risco_tabela()` |
+| [`poc_app.py`](poc_app.py) | +6 rotas + fallback parquet + `data_ok`/`api_ok` + telemetria top-30 + `import pandas as pd` |
+| [`views/index.html`](views/index.html) | KPI cards redesenhados + nav links |
 | [`views/style.css`](views/style.css) | CSS KPI cards vertical + barra de proporção |
-| [`views/dashboards/_base.html`](views/dashboards/_base.html) | Nav links + modal `#modalChamado` + funções `abrirChamadoModal` / `confirmarChamado` |
+| [`views/dashboards/_base.html`](views/dashboards/_base.html) | Modal Chamado + `exportarCSV()` global + nav links Financeiro e Modelo |
 | [`views/dashboards/dashboards.css`](views/dashboards/dashboards.css) | +badges diagnóstico +sparkline +`.dash-intro` |
 | [`views/dashboards/risco.html`](views/dashboards/risco.html) | Cabeçalhos com ícones/tooltips + sort prioridade + intro |
-| [`views/dashboards/risco.js`](views/dashboards/risco.js) | Score composto + sparklines + priority sort + `abrirChamado` → modal real |
-| [`views/dashboards/saude.js`](views/dashboards/saude.js) | Tooltips enriquecidos + loja column fix + top10 sort + SyntaxError fix |
-| [`views/dashboards/alarmes_loja.html`](views/dashboards/alarmes_loja.html) | Seção gráfico Pareto + intro |
-| [`views/dashboards/alarmes_loja.js`](views/dashboards/alarmes_loja.js) | Reescrito: dark theme + `buildParetoChart()` |
-| [`views/dashboards/pressao.html`](views/dashboards/pressao.html) | Badges diagnóstico (bloqueio/subcarga/ok) + intro |
-| [`views/dashboards/pressao.js`](views/dashboards/pressao.js) | Guard null + `height:400` + `container.style.height` |
+| [`views/dashboards/risco.js`](views/dashboards/risco.js) | Score composto + sparklines + chamado modal + horizonte temporal + early warning badges + CSV export |
+| [`views/dashboards/saude.js`](views/dashboards/saude.js) | Tooltips + loja fix + top10 sort + SyntaxError fix + auto-refresh |
+| [`views/dashboards/alarmes_loja.html`](views/dashboards/alarmes_loja.html) | Gráfico Pareto + intro |
+| [`views/dashboards/alarmes_loja.js`](views/dashboards/alarmes_loja.js) | Dark theme + `buildParetoChart()` + auto-refresh |
+| [`views/dashboards/degelo.js`](views/dashboards/degelo.js) | +auto-refresh |
+| [`views/dashboards/financeiro.js`](views/dashboards/financeiro.js) | +auto-refresh + CSV export |
+| [`views/dashboards/pressao.html`](views/dashboards/pressao.html) | Badges diagnóstico + intro |
+| [`views/dashboards/pressao.js`](views/dashboards/pressao.js) | Guard null + height fix |
 | [`views/dashboards/temperatura.html`](views/dashboards/temperatura.html) | +intro |
 | [`views/dashboards/degelo.html`](views/dashboards/degelo.html) | +intro |
 | [`views/dashboards/chamados.html`](views/dashboards/chamados.html) | +intro |
@@ -384,3 +549,6 @@ top10 = sorted(devices, key=lambda d: (CRIT_ORDER.get(d["criticidade"], 99), -(d
 - **Sparklines e localStorage:** histórico limitado a 8 pontos por device (`slice(-8)`). Limpar com `localStorage.removeItem('ef_score_history')` no console se necessário.
 - **Scatter Chart.js:** usa tipo nativo `'scatter'`, datasets separados por criticidade para legenda automática; tooltip personalizado com `ctx.raw._d` para acesso ao objeto device.
 - **Modal Chamado centralizado:** qualquer dashboard pode chamar `abrirChamadoModal(d)` — basta que `d` tenha `dispositivo_id`, `loja_id`, `loja_nome`, `criticidade` e `crit_label`.
+- **Early warnings sem telemetria:** `alertas: []` quando `tele_features` está vazio (parquet fallback ou modelos não treinados). Frontend renderiza zero badges sem erros.
+- **Horizonte temporal:** requer mínimo 3 pontos no `localStorage`. Em sessões novas ou após `localStorage.clear()`, o badge não aparece — comportamento esperado.
+- **Porta 5900 bloqueada:** API externa inacessível em ambientes cloud (Render, Railway, Heroku). Solução permanente: pedir ao provedor da API um endpoint em 443/80, ou usar túnel. Parquet fallback cobre o PoC.

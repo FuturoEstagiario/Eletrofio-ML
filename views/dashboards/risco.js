@@ -50,6 +50,32 @@ function renderSparkline(deviceId, historyMap) {
   </svg>`;
 }
 
+function estimarDiasFalha(deviceId) {
+  const hist = getScoreHistory();
+  const pts  = hist[String(deviceId)] || [];
+  if (pts.length < 3) return null;
+
+  const now = Date.now();
+  const xs  = pts.map(p => (p.ts - now) / 86400000);
+  const ys  = pts.map(p => p.v);
+  const n   = xs.length;
+  const sx  = xs.reduce((a, b) => a + b, 0);
+  const sy  = ys.reduce((a, b) => a + b, 0);
+  const sxy = xs.reduce((s, x, i) => s + x * ys[i], 0);
+  const sx2 = xs.reduce((s, x) => s + x * x, 0);
+  const denom = n * sx2 - sx * sx;
+  if (Math.abs(denom) < 1e-9) return null;
+
+  const slope = (n * sxy - sx * sy) / denom;
+  const intercept = (sy - slope * sx) / n;
+  if (slope <= 0.001) return null;
+
+  const THRESHOLD = 0.85;
+  if (intercept >= THRESHOLD) return 0;
+  const dias = Math.round((THRESHOLD - intercept) / slope);
+  return dias > 0 && dias <= 365 ? dias : null;
+}
+
 function scoreColor(score) {
   if (score === null || score === undefined) return null;
   if (score < 0.4) return 'risk-fill-low';
@@ -69,6 +95,22 @@ function renderRow(d, historyMap) {
   const mlPct     = d.risk_score !== null && d.risk_score !== undefined
     ? Math.round(d.risk_score * 100) : null;
 
+  const dias = estimarDiasFalha(d.dispositivo_id);
+  const diasBadge = dias !== null
+    ? `<div style="font-size:.6rem;font-weight:600;margin-top:3px;color:${dias <= 7 ? '#ef4444' : dias <= 30 ? '#eab308' : '#4ade80'}">⏱ ~${dias}d p/ falha</div>`
+    : '';
+
+  const WARN_LABELS = {
+    temp_subindo:   { icon: '🌡', txt: 'Temp subindo',     color: '#f97316' },
+    degelo_elevado: { icon: '❄',  txt: 'Degelo elevado',   color: '#60a5fa' },
+    acima_setpoint: { icon: '↑',  txt: 'Acima setpoint',   color: '#ef4444' },
+    temp_instavel:  { icon: '〜', txt: 'Temp instável',    color: '#eab308' },
+  };
+  const alertasBadges = (d.alertas || []).map(a => {
+    const w = WARN_LABELS[a] || { icon: '!', txt: a, color: '#94a3b8' };
+    return `<span style="font-size:.58rem;background:${w.color}22;color:${w.color};border:1px solid ${w.color}44;border-radius:3px;padding:0 4px;margin-right:2px;white-space:nowrap">${w.icon} ${w.txt}</span>`;
+  }).join('');
+
   const scoreCell = `<div class="sparkline-cell">
     <div>
       <div class="d-flex align-items-center gap-2 mb-1">
@@ -78,6 +120,8 @@ function renderRow(d, historyMap) {
         <span style="font-size:.75rem;font-weight:700">${Math.round(composite*100)}%</span>
       </div>
       <div style="font-size:.62rem;color:var(--muted)">ML: ${mlPct !== null ? mlPct + '%' : 'N/A'}</div>
+      ${diasBadge}
+      ${alertasBadges ? `<div style="margin-top:3px">${alertasBadges}</div>` : ''}
     </div>
     ${renderSparkline(d.dispositivo_id, historyMap)}
   </div>`;
@@ -188,6 +232,7 @@ async function loadData() {
     populateLojaFilter(allData);
     applyFilters();
     document.getElementById('risco-update').innerHTML = `<i class="bi bi-arrow-clockwise"></i> ${new Date().toLocaleTimeString('pt-BR')}`;
+    _initExportRisco();
   } catch (err) {
     document.getElementById('risco-loading').innerHTML = `<i class="bi bi-x-circle text-danger" style="font-size:1.5rem"></i><span>Erro ao carregar: ${err.message}</span>`;
   }
@@ -195,6 +240,35 @@ async function loadData() {
 
 function abrirChamado(d) {
   abrirChamadoModal(d);
+}
+
+let _exportRiscoInit = false;
+function _initExportRisco() {
+  if (_exportRiscoInit) return;
+  _exportRiscoInit = true;
+  const ref = document.getElementById('risco-update');
+  if (!ref) return;
+  const btn = document.createElement('button');
+  btn.className = 'btn-action ms-2';
+  btn.style.cssText = 'font-size:.72rem;padding:.2rem .55rem';
+  btn.innerHTML = '<i class="bi bi-download"></i> CSV';
+  btn.onclick = () => {
+    const headers = ['Criticidade', 'Dispositivo', 'ID', 'Loja', 'Score ML', 'Temp Atual', 'Erro Temp', 'Volatilidade', 'Degelo %', 'Sem Tratativa'];
+    const rows = allData.map(d => [
+      d.crit_label,
+      d.dispositivo_nome,
+      d.dispositivo_id,
+      d.loja_nome,
+      d.risk_score != null ? (d.risk_score * 100).toFixed(1) + '%' : '',
+      d.temp_atual != null ? d.temp_atual + '°C' : '',
+      d.temp_erro != null ? d.temp_erro + '°C' : '',
+      d.temp_std != null ? d.temp_std + '°C' : '',
+      d.degelo_fracao + '%',
+      d.sem_tratativa ? 'Sim' : 'Não',
+    ]);
+    exportarCSV(headers, rows, `mapa_risco_${new Date().toISOString().slice(0,10)}.csv`);
+  };
+  ref.after(btn);
 }
 
 document.querySelectorAll('.crit-check-btn').forEach(btn => {

@@ -58,6 +58,9 @@
     <a href="/dashboards/financeiro" class="sidebar-link {% if active_page == 'financeiro' %}active{% endif %}" title="Impacto Financeiro">
       <i class="bi bi-currency-exchange"></i><span>Impacto Financeiro</span>
     </a>
+    <a href="/dashboards/modelo" class="sidebar-link {% if active_page == 'modelo' %}active{% endif %}" title="Qualidade do Modelo">
+      <i class="bi bi-cpu-fill"></i><span>Qualidade do Modelo</span>
+    </a>
   </nav>
 
   <div class="sidebar-footer">
@@ -79,10 +82,6 @@
     </div>
     <div class="topbar-right">
       <span class="topbar-ts" id="last-update"><i class="bi bi-clock me-1"></i>—</span>
-      <button class="topbar-notif" title="Alertas activos">
-        <i class="bi bi-bell"></i>
-        <span class="notif-dot"></span>
-      </button>
       <div class="topbar-avatar" title="Administrador">AD</div>
     </div>
   </header>
@@ -206,6 +205,20 @@ function closeMobileSidebar() {
   document.getElementById('sidebar').classList.remove('open');
   document.getElementById('sidebarOverlay').classList.remove('open');
 }
+function exportarCSV(headers, rows, filename) {
+  const esc = v => v == null ? '' : String(v).replace(/"/g, '""');
+  const lines = [
+    headers.map(h => `"${esc(h)}"`).join(','),
+    ...rows.map(r => r.map(v => `"${esc(v)}"`).join(',')),
+  ];
+  const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
 function showToast(msg, type) {
   const icons = { success: 'bi-check-circle-fill', error: 'bi-x-circle-fill', info: 'bi-info-circle-fill' };
   const el = document.createElement('div');

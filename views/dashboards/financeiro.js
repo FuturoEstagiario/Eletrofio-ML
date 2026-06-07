@@ -317,13 +317,45 @@ async function loadFinanceiro() {
     const upd = document.getElementById('fin-update');
     upd.style.display = 'inline-flex';
     upd.innerHTML = `<i class="bi bi-arrow-clockwise"></i> ${new Date().toLocaleTimeString('pt-BR')}`;
+    _initExportFin();
   } catch (err) {
     loadingEl.innerHTML = `<i class="bi bi-x-circle text-danger" style="font-size:1.5rem"></i><span>Erro ao carregar dados: ${err.message}</span>`;
     showToast('Erro ao carregar impacto financeiro: ' + err.message, 'error');
   }
 }
 
+let _exportFinInit = false;
+function _initExportFin() {
+  if (_exportFinInit) return;
+  _exportFinInit = true;
+  const ref = document.getElementById('fin-update');
+  if (!ref) return;
+  const btn = document.createElement('button');
+  btn.className = 'btn-action ms-2';
+  btn.style.cssText = 'font-size:.72rem;padding:.2rem .55rem';
+  btn.innerHTML = '<i class="bi bi-download"></i> CSV';
+  btn.onclick = () => {
+    const headers = ['Recomendação', 'Dispositivo', 'ID', 'Loja', 'Criticidade', 'Score ML', 'R$/hora', 'Exposição/dia', 'Exposição/semana', 'ROI ×', 'Economia/dia'];
+    const rows = _allDevices.map(d => [
+      d.recomendacao,
+      d.dispositivo_nome,
+      d.dispositivo_id,
+      d.loja_nome,
+      d.criticidade,
+      d.risk_score != null ? (d.risk_score * 100).toFixed(1) + '%' : '',
+      d.custo_hora != null ? 'R$ ' + d.custo_hora.toFixed(0) : '',
+      d.exposicao_diaria != null ? 'R$ ' + d.exposicao_diaria.toFixed(0) : '',
+      d.exposicao_semanal != null ? 'R$ ' + d.exposicao_semanal.toFixed(0) : '',
+      d.roi != null ? d.roi.toFixed(1) + 'x' : '',
+      d.economia_diaria != null ? 'R$ ' + d.economia_diaria.toFixed(0) : '',
+    ]);
+    exportarCSV(headers, rows, `impacto_financeiro_${new Date().toISOString().slice(0,10)}.csv`);
+  };
+  ref.after(btn);
+}
+
 document.getElementById('rec-filter').addEventListener('change', applyFilters);
 document.getElementById('crit-filter-fin').addEventListener('change', applyFilters);
 
 loadFinanceiro();
+setInterval(loadFinanceiro, 120000);

@@ -16,6 +16,24 @@ def _last_features(feat_list: list[dict]) -> dict:
     return feat_list[-1]
 
 
+def _early_warnings(feats: dict) -> list[str]:
+    warns = []
+    tendencia   = feats.get("temp_taxa_variacao_media", 0) or 0
+    degelo_pct  = (feats.get("degelo_fracao", 0) or 0) * 100
+    temp_erro   = feats.get("temp_erro_medio", 0) or 0
+    temp_std    = feats.get("temp_std", 0) or 0
+
+    if tendencia > 0.08:
+        warns.append("temp_subindo")
+    if degelo_pct > 30:
+        warns.append("degelo_elevado")
+    if temp_erro > 5 and tendencia > 0:
+        warns.append("acima_setpoint")
+    if temp_std > 2.5:
+        warns.append("temp_instavel")
+    return warns
+
+
 def risco_tabela(alarmes_raw: list[dict], tele_features: dict, modelos: dict) -> list[dict]:
     if not alarmes_raw:
         return []
@@ -86,6 +104,7 @@ def risco_tabela(alarmes_raw: list[dict], tele_features: dict, modelos: dict) ->
             "temp_std": round(float(temp_std), 2) if temp_std is not None else None,
             "degelo_fracao": round(float(degelo_fracao) * 100, 1),
             "risk_score": risk_score,
+            "alertas": _early_warnings(feats),
         })
 
     resultado.sort(key=lambda x: CRIT_ORDER.get(x["criticidade"], 99))
