@@ -70,6 +70,9 @@ try:
 except Exception as _e:
     log.warning(f"MODELO OneClassSVM nao encontrado: {_e}")
 
+_pipeline_lock  = threading.Lock()
+_pipeline_state = {"last_collection": None, "last_training": None, "devices_at_last_train": 0}
+
 
 class _NaNSafeProvider(DefaultJSONProvider):
     @staticmethod
@@ -264,6 +267,81 @@ def _fetch_background():
 
 _bg = threading.Thread(target=_fetch_background, daemon=True)
 _bg.start()
+
+
+# ── Pipeline: colecta agendada + re-treino automático ────────────────────────
+
+def _reload_models():
+    from src.models import RandomForestModel, OneClassSVMModel
+    from src.config import MODELS_DIR
+    with _pipeline_lock:
+        try:
+            _modelos["rf"] = RandomForestModel.carregar(f"{MODELS_DIR}/rf_eletrofrio.pkl")
+        except Exception as e:
+            log.warning(f"[PIPELINE] Reload RF falhou: {e}")
+        try:
+            _modelos["ocsvm"] = OneClassSVMModel.carregar(MODELS_DIR)
+        except Exception as e:
+            log.warning(f"[PIPELINE] Reload OCC SVM falhou: {e}")
+    log.info("[PIPELINE] Modelos recarregados em memória")
+
+
+def _background_train():
+    try:
+        from src.pipeline import run_training
+        metrics = run_training(use_feedback=True)
+        _pipeline_state["last_training"] = metrics
+        _reload_models()
+    except Exception as e:
+        log.error(f"[PIPELINE] Re-treino falhou: {type(e).__name__}: {e}", exc_info=True)
+
+
+def _trigger_retrain_if_needed():
+    feat_path = os.path.join(_PARQUET_DIR, "tele_features.parquet")
+    if not os.path.exists(feat_path):
+        return
+    try:
+        n_devices = len(pd.read_parquet(feat_path))
+    except Exception:
+        return
+    if n_devices > _pipeline_state["devices_at_last_train"]:
+        log.info(
+            f"[PIPELINE] Novos devices ({_pipeline_state['devices_at_last_train']} → {n_devices})"
+            " — lançando re-treino..."
+        )
+        _pipeline_state["devices_at_last_train"] = n_devices
+        threading.Thread(target=_background_train, daemon=True).start()
+
+
+def _scheduled_collect():
+    log.info("[PIPELINE] Colecta agendada iniciada...")
+    try:
+        from src.pipeline import run_collection
+        stats = run_collection()
+        _pipeline_state["last_collection"] = stats
+        try:
+            _cache["tele_features"] = _parquet_load_tele_features()
+            _cache["tele_series"]   = _parquet_load_tele_series()
+            log.info("[PIPELINE] Cache tele actualizado após colecta")
+        except Exception as ce:
+            log.warning(f"[PIPELINE] Reload cache tele falhou: {ce}")
+        _trigger_retrain_if_needed()
+    except Exception as e:
+        log.error(f"[PIPELINE] Colecta agendada falhou: {type(e).__name__}: {e}", exc_info=True)
+
+
+try:
+    import atexit
+    from apscheduler.schedulers.background import BackgroundScheduler
+    _scheduler = BackgroundScheduler(daemon=True)
+    _scheduler.add_job(func=_scheduled_collect, trigger="interval", hours=6, id="collect_tele")
+    _scheduler.start()
+    atexit.register(lambda: _scheduler.shutdown(wait=False))
+    log.info("[PIPELINE] Scheduler iniciado — colecta a cada 6h")
+    log.warning("[PIPELINE] AVISO: Gunicorn workers>1 cria múltiplos schedulers. Use workers=1 ou job store externo.")
+except ImportError:
+    log.warning("[PIPELINE] apscheduler não instalado — colecta agendada desactivada")
+
 
 # ── Configuração de criticidade ───────────────────────────────────────────────
 
@@ -814,6 +892,69 @@ def api_dashboard_modelo():
         })
     except Exception as e:
         return jsonify({"status": "erro", "mensagem": str(e)}), 500
+
+
+@app.route("/api/feedback", methods=["POST"])
+def api_feedback():
+    """Registra feedback de técnico sobre anomalia de um device.
+
+    Body JSON: { "dispositivo_id": int, "anomalo": 0|1, "reason": str }
+    O feedback sobrepõe o label automático de criticidade no próximo re-treino.
+    """
+    try:
+        data   = request.get_json(force=True) or {}
+        did    = data.get("dispositivo_id")
+        label  = data.get("anomalo")
+        reason = str(data.get("reason", ""))
+
+        if did is None or label not in (0, 1):
+            return jsonify({"status": "erro", "mensagem": "dispositivo_id e anomalo (0|1) são obrigatórios"}), 400
+
+        feedback_path = os.path.join(_PARQUET_DIR, "feedback.parquet")
+        new_row = pd.DataFrame([{
+            "dispositivo_id": int(did),
+            "anomalo":        int(label),
+            "reason":         reason,
+            "timestamp":      datetime.now().isoformat(),
+        }])
+
+        if os.path.exists(feedback_path):
+            df_fb = pd.read_parquet(feedback_path)
+            df_fb = df_fb[df_fb["dispositivo_id"] != int(did)]
+            df_fb = pd.concat([df_fb, new_row], ignore_index=True)
+        else:
+            df_fb = new_row
+
+        df_fb.to_parquet(feedback_path, index=False)
+        log.info(f"[FEEDBACK] Device {did} → anomalo={label} reason='{reason}'")
+        return jsonify({"status": "ok", "dispositivo_id": did, "anomalo": label})
+    except Exception as e:
+        return jsonify({"status": "erro", "mensagem": str(e)}), 500
+
+
+@app.route("/api/admin/coletar", methods=["POST"])
+def api_admin_coletar():
+    """Dispara colecta manual de telemetria em background thread."""
+    threading.Thread(target=_scheduled_collect, daemon=True).start()
+    return jsonify({"status": "ok", "mensagem": "Colecta iniciada em background"})
+
+
+@app.route("/api/admin/treinar", methods=["POST"])
+def api_admin_treinar():
+    """Dispara re-treino manual dos modelos em background thread."""
+    threading.Thread(target=_background_train, daemon=True).start()
+    return jsonify({"status": "ok", "mensagem": "Re-treino iniciado em background"})
+
+
+@app.route("/api/pipeline/status")
+def api_pipeline_status():
+    """Estado do pipeline: última colecta, último treino, devices."""
+    return jsonify({
+        "status":                "ok",
+        "last_collection":       _pipeline_state.get("last_collection"),
+        "last_training":         _pipeline_state.get("last_training"),
+        "devices_at_last_train": _pipeline_state.get("devices_at_last_train"),
+    })
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
