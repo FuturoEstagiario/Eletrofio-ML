@@ -92,53 +92,84 @@ _cache = {
 CACHE_TTL = 600
 
 
-def _fetch_background():
-    while True:
-        log.info("══ início do ciclo de cache ══")
+def _parquet_load_alarmes():
+    path = os.path.join(_PARQUET_DIR, "alarmes.parquet")
+    df = pd.read_parquet(path)
+    return df.where(pd.notnull(df), None).to_dict("records")
+
+
+def _parquet_load_unidades():
+    path = os.path.join(_PARQUET_DIR, "unidades.parquet")
+    df = pd.read_parquet(path)
+    return df.where(pd.notnull(df), None).to_dict("records")
+
+
+# ── Pre-load síncrono de parquet — garante data_ok=True antes do 1.º request ──
+log.info("PRE-LOAD startup: carregando parquet...")
+try:
+    _cache["alarmes_raw"] = _parquet_load_alarmes()
+    _cache["data_ok"] = True
+    log.info(f"PRE-LOAD alarmes OK — {len(_cache['alarmes_raw'])} registos")
+except Exception as _pe:
+    log.error(f"PRE-LOAD alarmes ERRO: {type(_pe).__name__}: {_pe}", exc_info=True)
+
+try:
+    _cache["unidades"] = _parquet_load_unidades()
+    log.info(f"PRE-LOAD unidades OK — {len(_cache['unidades'])} registos")
+except Exception as _pe:
+    log.error(f"PRE-LOAD unidades ERRO: {type(_pe).__name__}: {_pe}", exc_info=True)
+
+_cache["ts"] = time.time()
+log.info(f"PRE-LOAD concluído — data_ok={_cache['data_ok']} alarmes={len(_cache['alarmes_raw'])} unidades={len(_cache['unidades'])}")
+
+
+def _run_cache_cycle():
+    """Executa um ciclo completo de refresh do cache. Chamado pelo thread de background."""
+    log.info("══ início do ciclo de cache ══")
+
+    # Alarmes
+    try:
+        log.info("Buscando alarmes da API...")
+        _cache["alarmes_raw"] = buscar_alarmes()
+        _cache["api_ok"] = True
+        _cache["data_ok"] = True
+        log.info(f"API alarmes OK — {len(_cache['alarmes_raw'])} registos")
+    except Exception as e:
+        log.error(f"API alarmes ERRO: {type(e).__name__}: {e}", exc_info=True)
+        _cache["api_ok"] = False
         try:
-            log.info("Buscando alarmes da API...")
-            _cache["alarmes_raw"] = buscar_alarmes()
-            _cache["api_ok"] = True
+            _cache["alarmes_raw"] = _parquet_load_alarmes()
             _cache["data_ok"] = True
-            log.info(f"API alarmes OK — {len(_cache['alarmes_raw'])} registos")
-        except Exception as e:
-            log.error(f"API alarmes ERRO: {type(e).__name__}: {e}")
-            _cache["api_ok"] = False
-            parquet_path = os.path.join(_PARQUET_DIR, "alarmes.parquet")
-            log.info(f"Tentando fallback parquet: {parquet_path}")
-            try:
-                df = pd.read_parquet(parquet_path)
-                _cache["alarmes_raw"] = df.where(pd.notnull(df), None).to_dict("records")
-                _cache["data_ok"] = True
-                log.info(f"Parquet alarmes OK — {len(_cache['alarmes_raw'])} registos")
-            except Exception as pe:
-                log.error(f"Parquet alarmes ERRO: {type(pe).__name__}: {pe}")
-                _cache["data_ok"] = False
+            log.info(f"Fallback parquet alarmes OK — {len(_cache['alarmes_raw'])} registos")
+        except Exception as pe:
+            log.error(f"Fallback parquet alarmes ERRO: {type(pe).__name__}: {pe}", exc_info=True)
 
+    # Unidades
+    try:
+        log.info("Buscando unidades da API...")
+        _cache["unidades"] = buscar_unidades()
+        log.info(f"API unidades OK — {len(_cache['unidades'])} registos")
+    except Exception as e:
+        log.error(f"API unidades ERRO: {type(e).__name__}: {e}", exc_info=True)
         try:
-            log.info("Buscando unidades da API...")
-            _cache["unidades"] = buscar_unidades()
-            log.info(f"API unidades OK — {len(_cache['unidades'])} registos")
-        except Exception as e:
-            log.error(f"API unidades ERRO: {type(e).__name__}: {e}")
-            parquet_path = os.path.join(_PARQUET_DIR, "unidades.parquet")
-            log.info(f"Tentando fallback parquet: {parquet_path}")
-            try:
-                df = pd.read_parquet(parquet_path)
-                _cache["unidades"] = df.where(pd.notnull(df), None).to_dict("records")
-                log.info(f"Parquet unidades OK — {len(_cache['unidades'])} registos")
-            except Exception as pe:
-                log.error(f"Parquet unidades ERRO: {type(pe).__name__}: {pe}")
+            _cache["unidades"] = _parquet_load_unidades()
+            log.info(f"Fallback parquet unidades OK — {len(_cache['unidades'])} registos")
+        except Exception as pe:
+            log.error(f"Fallback parquet unidades ERRO: {type(pe).__name__}: {pe}", exc_info=True)
 
-        _cache["ts"] = time.time()
-        log.info(
-            f"Cache actualizado — api_ok={_cache['api_ok']} data_ok={_cache['data_ok']} "
-            f"alarmes={len(_cache['alarmes_raw'])} unidades={len(_cache['unidades'])}"
-        )
+    _cache["ts"] = time.time()
+    log.info(
+        f"Cache actualizado — api_ok={_cache['api_ok']} data_ok={_cache['data_ok']} "
+        f"alarmes={len(_cache['alarmes_raw'])} unidades={len(_cache['unidades'])}"
+    )
 
+    # Telemetria
+    try:
         _PRIO = {"C": 0, "A": 1, "M": 2, "B": 3, "I": 4}
         _sorted = sorted(_cache["alarmes_raw"], key=lambda a: _PRIO.get(a.get("criticidade", "I"), 99))
-        device_ids = list(dict.fromkeys(a.get("dispositivoId") for a in _sorted if a.get("dispositivoId")))[:30]
+        device_ids = list(dict.fromkeys(
+            a.get("dispositivoId") for a in _sorted if a.get("dispositivoId")
+        ))[:30]
         log.info(f"Telemetria: {len(device_ids)} devices a buscar")
         for did in device_ids:
             try:
@@ -156,8 +187,18 @@ def _fetch_background():
             time.sleep(0.15)
         _cache["ts_tele"] = time.time()
         log.info(f"Telemetria concluída — {len(_cache['tele_features'])} devices com features")
-        log.info(f"Próximo ciclo em {CACHE_TTL}s")
+    except Exception as te:
+        log.error(f"Telemetria bloco ERRO inesperado: {type(te).__name__}: {te}", exc_info=True)
 
+    log.info(f"Próximo ciclo em {CACHE_TTL}s")
+
+
+def _fetch_background():
+    while True:
+        try:
+            _run_cache_cycle()
+        except Exception as e:
+            log.critical(f"THREAD CRASH — ciclo abortado: {type(e).__name__}: {e}", exc_info=True)
         time.sleep(CACHE_TTL)
 
 
@@ -241,7 +282,11 @@ def dashboard():
     import pandas as pd
     alarmes_raw = _cache["alarmes_raw"]
     unidades    = _cache["unidades"]
-    erros       = {} if _cache.get("data_ok") else {"status": "Carregando dados da API, aguarde e recarregue em instantes..."}
+    log.info(
+        f"GET / — data_ok={_cache.get('data_ok')} api_ok={_cache.get('api_ok')} "
+        f"alarmes={len(alarmes_raw)} unidades={len(unidades)}"
+    )
+    erros = {} if _cache.get("data_ok") else {"status": "Carregando dados da API, aguarde e recarregue em instantes..."}
     df = processar_alarmes(alarmes_raw) if alarmes_raw else pd.DataFrame()
 
     stats        = _computar_stats(df)
