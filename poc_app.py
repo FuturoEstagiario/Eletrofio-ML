@@ -163,32 +163,35 @@ def _run_cache_cycle():
         f"alarmes={len(_cache['alarmes_raw'])} unidades={len(_cache['unidades'])}"
     )
 
-    # Telemetria
-    try:
-        _PRIO = {"C": 0, "A": 1, "M": 2, "B": 3, "I": 4}
-        _sorted = sorted(_cache["alarmes_raw"], key=lambda a: _PRIO.get(a.get("criticidade", "I"), 99))
-        device_ids = list(dict.fromkeys(
-            a.get("dispositivoId") for a in _sorted if a.get("dispositivoId")
-        ))[:30]
-        log.info(f"Telemetria: {len(device_ids)} devices a buscar")
-        for did in device_ids:
-            try:
-                raw = buscar_telemetria(did)
-                df_tele = parse_telemetria(did, raw)
-                if df_tele is not None:
-                    sd = {"labels": df_tele["timestamp_label"].tolist()}
-                    for col in SERIES_MAP.values():
-                        if col in df_tele.columns:
-                            sd[col] = df_tele[col].tolist()
-                    _cache["tele_series"][did] = sd
-                    _cache["tele_features"][did] = processar_dispositivo(df_tele)
-            except Exception as te:
-                log.warning(f"Telemetria device {did} ERRO: {type(te).__name__}: {te}")
-            time.sleep(0.15)
-        _cache["ts_tele"] = time.time()
-        log.info(f"Telemetria concluída — {len(_cache['tele_features'])} devices com features")
-    except Exception as te:
-        log.error(f"Telemetria bloco ERRO inesperado: {type(te).__name__}: {te}", exc_info=True)
+    # Telemetria — só tenta se a API estiver acessível
+    if not _cache.get("api_ok"):
+        log.info("Telemetria ignorada — API indisponível (api_ok=False)")
+    else:
+        try:
+            _PRIO = {"C": 0, "A": 1, "M": 2, "B": 3, "I": 4}
+            _sorted = sorted(_cache["alarmes_raw"], key=lambda a: _PRIO.get(a.get("criticidade", "I"), 99))
+            device_ids = list(dict.fromkeys(
+                a.get("dispositivoId") for a in _sorted if a.get("dispositivoId")
+            ))[:30]
+            log.info(f"Telemetria: {len(device_ids)} devices a buscar")
+            for did in device_ids:
+                try:
+                    raw = buscar_telemetria(did)
+                    df_tele = parse_telemetria(did, raw)
+                    if df_tele is not None:
+                        sd = {"labels": df_tele["timestamp_label"].tolist()}
+                        for col in SERIES_MAP.values():
+                            if col in df_tele.columns:
+                                sd[col] = df_tele[col].tolist()
+                        _cache["tele_series"][did] = sd
+                        _cache["tele_features"][did] = processar_dispositivo(df_tele)
+                except Exception as te:
+                    log.warning(f"Telemetria device {did} ERRO: {type(te).__name__}: {te}")
+                time.sleep(0.15)
+            _cache["ts_tele"] = time.time()
+            log.info(f"Telemetria concluída — {len(_cache['tele_features'])} devices com features")
+        except Exception as te:
+            log.error(f"Telemetria bloco ERRO inesperado: {type(te).__name__}: {te}", exc_info=True)
 
     log.info(f"Próximo ciclo em {CACHE_TTL}s")
 
@@ -358,54 +361,43 @@ def api_unidade_detalhe(loja_id):
 
 @app.route("/api/telemetria/<int:dispositivo_id>")
 def api_telemetria(dispositivo_id):
-    """Retorna features de temperatura e series completas (temp, degelo, setpoint, onoff)."""
-    try:
-        raw = buscar_telemetria(dispositivo_id)
-        datasets = raw.get("datasets", [])
-        if not datasets:
-            return jsonify({"status": "ok", "dispositivo_id": dispositivo_id, "features": {}})
+    """Retorna features e séries de telemetria a partir do cache (sem chamada live à API)."""
+    feats = _cache["tele_features"].get(dispositivo_id) or _cache["tele_features"].get(str(dispositivo_id))
+    series = _cache["tele_series"].get(dispositivo_id) or _cache["tele_series"].get(str(dispositivo_id))
 
-        from src.api_preprocessor import _extrair_features_telemetria, _extrair_series_telemetria
+    if not feats and not series:
+        return jsonify({"status": "ok", "dispositivo_id": dispositivo_id, "features": {}, "series": {}, "labels": []})
 
-        features = _extrair_features_telemetria(raw)
-        if not features:
-            return jsonify({"status": "ok", "dispositivo_id": dispositivo_id, "features": {}})
+    feat_dict = feats[-1] if isinstance(feats, list) and feats else (feats or {})
+    temp = (series or {}).get("temp", [])
 
-        series = _extrair_series_telemetria(raw)
-
-        temp = series.get("temp", [])
-        arr = np.array(temp, dtype=float) if temp else np.array([])
-
-        return jsonify({
-            "status": "ok",
-            "dispositivo_id": dispositivo_id,
-            "features": {
-                "temp_media":         round(float(features.get("temp_media", 0)), 1),
-                "temp_maxima":        round(float(features.get("temp_maxima", 0)), 1),
-                "temp_minima":        round(float(features.get("temp_minima", 0)), 1),
-                "temp_amplitude":     round(float(features.get("temp_amplitude", 0)), 1),
-                "temp_tendencia":     round(float(features.get("temp_tendencia", 0)), 3),
-                "temp_acima_setpoint": round(float(features.get("temp_acima_setpoint", 0)), 3),
-                "degelo_fracao":      round(float(features.get("degelo_fracao", 0)), 3),
-                "onoff_fracao_ligado": round(float(features.get("onoff_fracao_ligado", 0)), 3),
-            },
-            "series": {
-                "temp":     temp[-96:] if len(temp) > 96 else temp,
-                "degelo":   series.get("degelo", [])[-96:],
-                "setpoint": series.get("setpoint", [])[-96:],
-                "onoff":    series.get("onoff", [])[-96:],
-            },
-            "labels": raw.get("labels", []),
-        })
-    except Exception as e:
-        return jsonify({"status": "erro", "mensagem": str(e)}), 500
+    return jsonify({
+        "status": "ok",
+        "dispositivo_id": dispositivo_id,
+        "features": {
+            "temp_media":          round(float(feat_dict.get("temp_mean", 0) or 0), 1),
+            "temp_maxima":         round(float(feat_dict.get("temp_max", 0) or 0), 1),
+            "temp_minima":         round(float(feat_dict.get("temp_min", 0) or 0), 1),
+            "temp_amplitude":      round(float(feat_dict.get("temp_amplitude", 0) or 0), 1),
+            "temp_tendencia":      round(float(feat_dict.get("temp_taxa_variacao_media", 0) or 0), 3),
+            "temp_acima_setpoint": round(float(feat_dict.get("temp_pct_acima_sp", 0) or 0), 3),
+            "degelo_fracao":       round(float(feat_dict.get("degelo_fracao", 0) or 0), 3),
+            "onoff_fracao_ligado": round(float(feat_dict.get("onoff_fracao_ligado", 0) or 0), 3),
+        },
+        "series": {
+            "temp":     temp[-96:] if len(temp) > 96 else temp,
+            "degelo":   (series or {}).get("degelo", [])[-96:],
+            "setpoint": (series or {}).get("setpoint", [])[-96:],
+            "onoff":    (series or {}).get("onoff", [])[-96:],
+        },
+        "labels": (series or {}).get("labels", []),
+    })
 
 
 @app.route("/api/stats")
 def api_stats():
     try:
-        alarmes_raw = buscar_alarmes()
-        df = processar_alarmes(alarmes_raw)
+        df = processar_alarmes(_cache["alarmes_raw"]) if _cache["alarmes_raw"] else pd.DataFrame()
         stats = _computar_stats(df)
         stats["atualizado"] = datetime.now().isoformat()
         return jsonify(stats)
