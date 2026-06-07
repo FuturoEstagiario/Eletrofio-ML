@@ -60,10 +60,9 @@ def risco_tabela(alarmes_raw: list[dict], tele_features: dict, modelos: dict) ->
         crit = raw.get("criticidade", "I")
 
         temp_atual = feats.get("temp_mean")
-        setpoint_ref = feats.get("temp_mean", 0) - feats.get("temp_erro_medio", 0)
         temp_erro = feats.get("temp_erro_medio")
         temp_std = feats.get("temp_std")
-        degelo_fracao = feats.get("degelo_fracao", 0.0)
+        degelo_fracao = feats.get("degelo_fracao") or 0.0
 
         risk_score = None
         if modelos.get("rf") is not None:

@@ -112,7 +112,7 @@ def _parquet_load_tele_features():
     result = {}
     for _, row in df.iterrows():
         did = int(row["dispositivo_id"])
-        feats = {k: (None if pd.isna(v) else v) for k, v in row.items() if k != "dispositivo_id"}
+        feats = {k: v for k, v in row.items() if k != "dispositivo_id" and not pd.isna(v)}
         result[did] = [feats]
     return result
 
