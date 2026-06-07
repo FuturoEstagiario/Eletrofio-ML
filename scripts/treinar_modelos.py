@@ -3,7 +3,8 @@ import os
 import sys
 import logging
 
-sys.path.insert(0, os.path.dirname(__file__))
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, _ROOT)
 
 logging.basicConfig(level=logging.INFO, format="[TREINO] %(message)s", stream=sys.stderr)
 log = logging.getLogger()
@@ -17,7 +18,7 @@ from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_sc
 from src.models import RandomForestModel, OneClassSVMModel
 from src.config import MODELS_DIR
 
-PARQUET_DIR  = os.path.join(os.path.dirname(__file__), "dados_coletados")
+PARQUET_DIR = os.path.join(_ROOT, "dados_coletados")
 CRIT_ORDER   = {"C": 4, "A": 3, "M": 2, "B": 1, "I": 0}
 MIN_VARIANCE = 1e-6
 

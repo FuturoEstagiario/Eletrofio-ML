@@ -34,23 +34,24 @@ warnings.filterwarnings("ignore")
 import pandas as pd
 
 # ── Módulos do projeto ────────────────────────────────────────────────────────
-sys.path.insert(0, os.path.dirname(__file__))
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, _ROOT)
 from src.config import DB_PATH, MODELS_DIR, REPORTS_DIR
-from src.data_generator import gerar_dataset, salvar_sqlite
-from src.preprocessor import carregar_e_preparar, engenharia_features, ENGINEERED_FEATURES
-from src.preprocessor import preparar_dados_janela, carregar_janelas_features
+from src.dev.data_generator import gerar_dataset, salvar_sqlite
+from src.dev.preprocessor import carregar_e_preparar, engenharia_features, ENGINEERED_FEATURES
+from src.dev.preprocessor import preparar_dados_janela, carregar_janelas_features
 from src.models import SVMModel, RandomForestModel, OneClassSVMModel, imprimir_metricas
 from src.api_client import buscar_alarmes, buscar_unidades, buscar_telemetria
 from src.api_preprocessor import (
     processar_alarmes, enriquecer_com_telemetria,
     salvar_leituras_real, carregar_leituras_real,
 )
-from src.chamado_service import avaliar_e_abrir_chamados
+from src.dev.chamado_service import avaliar_e_abrir_chamados
 from src.data_collector import coletar_tudo
 from src.features import processar_todos, get_feature_columns
 from src.labeling import preparar_dados_com_labels, recalcular_labels
-from src.evaluator import grid_search, avaliar_modelo_salvo
-from src.visualizacoes import (
+from src.dev.evaluator import grid_search, avaliar_modelo_salvo
+from src.dev.visualizacoes import (
     plot_distribuicao_classes,
     plot_correlacao,
     plot_boxplots_falha,

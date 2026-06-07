@@ -95,3 +95,4 @@ config_local.py
 *.log
 *.tmp
 *.bak
+.run_log.txt

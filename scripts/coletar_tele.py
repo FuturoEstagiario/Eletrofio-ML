@@ -13,7 +13,8 @@ import sys
 import time
 import logging
 
-sys.path.insert(0, os.path.dirname(__file__))
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, _ROOT)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -28,7 +29,7 @@ from src.data_collector import parse_telemetria
 from src.features import processar_dispositivo
 from src.config import SERIES_MAP
 
-PARQUET_DIR = os.path.join(os.path.dirname(__file__), "dados_coletados")
+PARQUET_DIR = os.path.join(_ROOT, "dados_coletados")
 MAX_DEVICES = 30
 PRIO = {"C": 0, "A": 1, "M": 2, "B": 3, "I": 4}
 
