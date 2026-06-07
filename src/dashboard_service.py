@@ -153,7 +153,7 @@ def temperatura_series(dispositivo_id: int, tele_series: dict) -> dict | None:
         "labels": labels,
         "temp": temp_arr.tolist(),
         "setpoint": sp_arr.tolist(),
-        "degelo": degelo,
+        "degelo": [v if v is not None else 0 for v in degelo],
         "band_upper": band_upper,
         "band_lower": band_lower,
         "anomaly_flags": anomaly_flags,

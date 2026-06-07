@@ -126,7 +126,7 @@ def _parquet_load_tele_series():
         g = group.sort_values("label_idx")
         sd = {"labels": g["label"].tolist()}
         for col in serie_cols:
-            sd[col] = g[col].tolist()
+            sd[col] = g[col].where(pd.notnull(g[col]), other=None).tolist()
         result[int(did)] = sd
     return result
 
