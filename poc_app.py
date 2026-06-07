@@ -15,6 +15,7 @@ Uso:
 
 import argparse
 import logging
+import math
 import os
 import sys
 import time
@@ -35,6 +36,7 @@ log = logging.getLogger('eletrofio')
 import numpy as np
 import pandas as pd
 from flask import Flask, jsonify, render_template, request
+from flask.json.provider import DefaultJSONProvider
 from whitenoise import WhiteNoise
 from src.api_client import buscar_alarmes, buscar_unidades, buscar_telemetria, abrir_chamado
 from src.api_preprocessor import processar_alarmes, _extrair_features_telemetria
@@ -69,7 +71,23 @@ except Exception as _e:
     log.warning(f"MODELO OneClassSVM nao encontrado: {_e}")
 
 
+class _NaNSafeProvider(DefaultJSONProvider):
+    @staticmethod
+    def _clean(obj):
+        if isinstance(obj, float) and not math.isfinite(obj):
+            return None
+        if isinstance(obj, dict):
+            return {k: _NaNSafeProvider._clean(v) for k, v in obj.items()}
+        if isinstance(obj, list):
+            return [_NaNSafeProvider._clean(v) for v in obj]
+        return obj
+
+    def dumps(self, obj, **kwargs):
+        return super().dumps(self._clean(obj), **kwargs)
+
+
 app = Flask(__name__, template_folder="views", static_folder="views")
+app.json = _NaNSafeProvider(app)
 app.wsgi_app = WhiteNoise(app.wsgi_app, root="views/", prefix="static")
 
 _BASE_DIR    = os.path.dirname(os.path.abspath(__file__))
@@ -741,7 +759,7 @@ def api_dashboard_modelo():
 
         if rf is not None:
             try:
-                clf = rf.modelo if hasattr(rf, "modelo") else rf
+                clf = rf.model if hasattr(rf, "model") else rf
                 importances = clf.feature_importances_.tolist()
                 feature_cols = [
                     "temp_media", "temp_maxima", "temp_minima",
@@ -762,7 +780,7 @@ def api_dashboard_modelo():
 
         if ocsvm is not None:
             try:
-                clf_svm = ocsvm.modelo if hasattr(ocsvm, "modelo") else ocsvm
+                clf_svm = ocsvm.model if hasattr(ocsvm, "model") else ocsvm
                 modelo_info["ocsvm"] = {
                     "tipo": "OneClass SVM",
                     "kernel": str(getattr(clf_svm, "kernel", "rbf")),
