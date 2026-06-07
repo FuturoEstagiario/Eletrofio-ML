@@ -41,7 +41,17 @@ def risco_tabela(alarmes_raw: list[dict], tele_features: dict, modelos: dict) ->
     raw_map = {a.get("dispositivoId"): a for a in alarmes_raw}
     resultado = []
 
-    for did, feat_list in tele_features.items():
+    # Quando tele_features ainda não carregou, itera sobre alarmes (dados parciais sem scores)
+    if tele_features:
+        device_source = [(did, feat_list) for did, feat_list in tele_features.items() if raw_map.get(did)]
+    else:
+        device_source = [
+            (raw.get("dispositivoId"), [])
+            for raw in alarmes_raw
+            if raw.get("dispositivoId") is not None
+        ]
+
+    for did, feat_list in device_source:
         raw = raw_map.get(did, {})
         if not raw:
             continue
