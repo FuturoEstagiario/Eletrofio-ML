@@ -14,6 +14,7 @@ Uso:
 """
 
 import argparse
+import logging
 import os
 import sys
 import time
@@ -21,6 +22,15 @@ import threading
 from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(__file__))
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='[EF] %(asctime)s %(levelname)s — %(message)s',
+    datefmt='%H:%M:%S',
+    stream=sys.stderr,
+    force=True,
+)
+log = logging.getLogger('eletrofio')
 
 import numpy as np
 import pandas as pd
@@ -45,18 +55,18 @@ try:
     from src.models import RandomForestModel, OneClassSVMModel
     from src.config import MODELS_DIR
     _modelos["rf"] = RandomForestModel.carregar(f"{MODELS_DIR}/rf_eletrofrio.pkl")
-    print("  [MODELO] Random Forest carregado.")
+    log.info("MODELO Random Forest carregado")
     _modelos_carregados = True
-except Exception:
-    print("  [MODELO] Random Forest nao encontrado (treine com main.py primeiro).")
+except Exception as _e:
+    log.warning(f"MODELO Random Forest nao encontrado: {_e}")
 
 try:
     if _modelos["ocsvm"] is None:
         _modelos["ocsvm"] = OneClassSVMModel.carregar(MODELS_DIR)
-    print("  [MODELO] OneClassSVM carregado.")
+    log.info("MODELO OneClassSVM carregado")
     _modelos_carregados = True
-except Exception:
-    print("  [MODELO] OneClassSVM nao encontrado (use main.py --real para treinar).")
+except Exception as _e:
+    log.warning(f"MODELO OneClassSVM nao encontrado: {_e}")
 
 
 app = Flask(__name__, template_folder="views", static_folder="views")
@@ -65,10 +75,10 @@ app.wsgi_app = WhiteNoise(app.wsgi_app, root="views/", prefix="static")
 _BASE_DIR    = os.path.dirname(os.path.abspath(__file__))
 _PARQUET_DIR = os.path.join(_BASE_DIR, "dados_coletados")
 
-print(f"[EF] BASE_DIR    : {_BASE_DIR}")
-print(f"[EF] PARQUET_DIR : {_PARQUET_DIR}")
-print(f"[EF] alarmes.parquet existe: {os.path.exists(os.path.join(_PARQUET_DIR, 'alarmes.parquet'))}")
-print(f"[EF] unidades.parquet existe: {os.path.exists(os.path.join(_PARQUET_DIR, 'unidades.parquet'))}")
+log.info(f"BASE_DIR    : {_BASE_DIR}")
+log.info(f"PARQUET_DIR : {_PARQUET_DIR}")
+log.info(f"alarmes.parquet  existe: {os.path.exists(os.path.join(_PARQUET_DIR, 'alarmes.parquet'))}")
+log.info(f"unidades.parquet existe: {os.path.exists(os.path.join(_PARQUET_DIR, 'unidades.parquet'))}")
 
 _cache = {
     "alarmes_raw": [], "unidades": [],
@@ -84,45 +94,52 @@ CACHE_TTL = 600
 
 def _fetch_background():
     while True:
-        print("[EF] --- início do ciclo de cache ---")
+        log.info("══ início do ciclo de cache ══")
         try:
-            print("[EF] Buscando alarmes da API...")
+            log.info("Buscando alarmes da API...")
             _cache["alarmes_raw"] = buscar_alarmes()
             _cache["api_ok"] = True
             _cache["data_ok"] = True
-            print(f"[EF] API alarmes OK — {len(_cache['alarmes_raw'])} registos")
+            log.info(f"API alarmes OK — {len(_cache['alarmes_raw'])} registos")
         except Exception as e:
-            print(f"[EF] API alarmes ERRO: {e}")
+            log.error(f"API alarmes ERRO: {type(e).__name__}: {e}")
             _cache["api_ok"] = False
             parquet_path = os.path.join(_PARQUET_DIR, "alarmes.parquet")
-            print(f"[EF] Fallback parquet: {parquet_path}")
+            log.info(f"Tentando fallback parquet: {parquet_path}")
             try:
                 df = pd.read_parquet(parquet_path)
                 _cache["alarmes_raw"] = df.where(pd.notnull(df), None).to_dict("records")
                 _cache["data_ok"] = True
-                print(f"[EF] Parquet alarmes OK — {len(_cache['alarmes_raw'])} registos")
+                log.info(f"Parquet alarmes OK — {len(_cache['alarmes_raw'])} registos")
             except Exception as pe:
-                print(f"[EF] Parquet alarmes ERRO: {pe}")
+                log.error(f"Parquet alarmes ERRO: {type(pe).__name__}: {pe}")
+                _cache["data_ok"] = False
+
         try:
-            print("[EF] Buscando unidades da API...")
+            log.info("Buscando unidades da API...")
             _cache["unidades"] = buscar_unidades()
-            print(f"[EF] API unidades OK — {len(_cache['unidades'])} registos")
+            log.info(f"API unidades OK — {len(_cache['unidades'])} registos")
         except Exception as e:
-            print(f"[EF] API unidades ERRO: {e}")
+            log.error(f"API unidades ERRO: {type(e).__name__}: {e}")
             parquet_path = os.path.join(_PARQUET_DIR, "unidades.parquet")
+            log.info(f"Tentando fallback parquet: {parquet_path}")
             try:
                 df = pd.read_parquet(parquet_path)
                 _cache["unidades"] = df.where(pd.notnull(df), None).to_dict("records")
-                print(f"[EF] Parquet unidades OK — {len(_cache['unidades'])} registos")
+                log.info(f"Parquet unidades OK — {len(_cache['unidades'])} registos")
             except Exception as pe:
-                print(f"[EF] Parquet unidades ERRO: {pe}")
+                log.error(f"Parquet unidades ERRO: {type(pe).__name__}: {pe}")
+
         _cache["ts"] = time.time()
-        print(f"[EF] Cache: api_ok={_cache['api_ok']} data_ok={_cache['data_ok']} alarmes={len(_cache['alarmes_raw'])} unidades={len(_cache['unidades'])}")
+        log.info(
+            f"Cache actualizado — api_ok={_cache['api_ok']} data_ok={_cache['data_ok']} "
+            f"alarmes={len(_cache['alarmes_raw'])} unidades={len(_cache['unidades'])}"
+        )
 
         _PRIO = {"C": 0, "A": 1, "M": 2, "B": 3, "I": 4}
         _sorted = sorted(_cache["alarmes_raw"], key=lambda a: _PRIO.get(a.get("criticidade", "I"), 99))
         device_ids = list(dict.fromkeys(a.get("dispositivoId") for a in _sorted if a.get("dispositivoId")))[:30]
-        print(f"[EF] Telemetria: {len(device_ids)} devices a buscar")
+        log.info(f"Telemetria: {len(device_ids)} devices a buscar")
         for did in device_ids:
             try:
                 raw = buscar_telemetria(did)
@@ -134,12 +151,12 @@ def _fetch_background():
                             sd[col] = df_tele[col].tolist()
                     _cache["tele_series"][did] = sd
                     _cache["tele_features"][did] = processar_dispositivo(df_tele)
-            except Exception:
-                pass
+            except Exception as te:
+                log.warning(f"Telemetria device {did} ERRO: {type(te).__name__}: {te}")
             time.sleep(0.15)
         _cache["ts_tele"] = time.time()
-        print(f"[EF] Telemetria concluída — {len(_cache['tele_features'])} devices com features")
-        print(f"[EF] Próximo ciclo em {CACHE_TTL}s")
+        log.info(f"Telemetria concluída — {len(_cache['tele_features'])} devices com features")
+        log.info(f"Próximo ciclo em {CACHE_TTL}s")
 
         time.sleep(CACHE_TTL)
 
