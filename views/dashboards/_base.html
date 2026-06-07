@@ -229,12 +229,17 @@ function showToast(msg, type) {
 }
 fetch('/api/health').then(r => r.json()).then(d => {
   const el = document.getElementById('api-status-label');
-  if (d.api) {
-    el.innerHTML = '<i class="bi bi-circle-fill text-success" style="font-size:.55rem"></i> API Online';
+  if (d.data_ok) {
+    const apiLabel = d.api ? 'API Online' : 'Cache local';
+    const color    = d.api ? 'text-success' : 'text-warning';
+    el.innerHTML = `<i class="bi bi-circle-fill ${color}" style="font-size:.55rem"></i> ${apiLabel}`;
   } else {
-    el.innerHTML = '<i class="bi bi-circle-fill text-danger" style="font-size:.55rem"></i> API Offline';
+    el.innerHTML = '<i class="bi bi-circle-fill text-danger" style="font-size:.55rem"></i> Sem dados';
   }
-}).catch(() => {});
+}).catch(() => {
+  document.getElementById('api-status-label').innerHTML =
+    '<i class="bi bi-circle-fill text-warning" style="font-size:.55rem"></i> A carregar…';
+});
 </script>
 {% block extra_scripts %}{% endblock %}
 </body>
