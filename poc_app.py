@@ -62,6 +62,9 @@ except Exception:
 app = Flask(__name__, template_folder="views", static_folder="views")
 app.wsgi_app = WhiteNoise(app.wsgi_app, root="views/", prefix="static")
 
+_BASE_DIR    = os.path.dirname(os.path.abspath(__file__))
+_PARQUET_DIR = os.path.join(_BASE_DIR, "dados_coletados")
+
 _cache = {
     "alarmes_raw": [], "unidades": [],
     "tele_features": {},
@@ -83,7 +86,7 @@ def _fetch_background():
         except Exception:
             _cache["api_ok"] = False
             try:
-                df = pd.read_parquet("dados_coletados/alarmes.parquet")
+                df = pd.read_parquet(os.path.join(_PARQUET_DIR, "alarmes.parquet"))
                 _cache["alarmes_raw"] = df.where(pd.notnull(df), None).to_dict("records")
                 _cache["data_ok"] = True
             except Exception:
@@ -92,7 +95,7 @@ def _fetch_background():
             _cache["unidades"] = buscar_unidades()
         except Exception:
             try:
-                df = pd.read_parquet("dados_coletados/unidades.parquet")
+                df = pd.read_parquet(os.path.join(_PARQUET_DIR, "unidades.parquet"))
                 _cache["unidades"] = df.where(pd.notnull(df), None).to_dict("records")
             except Exception:
                 pass
