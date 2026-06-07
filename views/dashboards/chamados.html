@@ -52,6 +52,9 @@
           <span class="panel-count" id="chamados-count">—</span>
         </div>
       </div>
+      <div class="panel-desc">
+        Cada linha é uma ordem de serviço aberta pelo dashboard. <span class="pd-threshold">Dispositivos que aparecem múltiplas vezes com curto intervalo</span> são reincidentes — sinal de problema estrutural não resolvido, não apenas uma falha pontual. Use o <strong>Score ML</strong> para comunicar ao técnico a urgência: score &gt; 70% exige diagnóstico completo, não apenas reset.
+      </div>
       <div class="position-relative">
         <div class="loading-overlay" id="chamados-loading"><div class="spinner-lg"></div><span>Carregando…</span></div>
         <div id="chamados-empty" style="display:none">
@@ -84,6 +87,9 @@
     <div class="card-panel h-100">
       <div class="panel-header">
         <span class="panel-title">Chamados por Hora</span>
+      </div>
+      <div class="panel-desc">
+        Distribuição dos chamados ao longo do dia. <span class="pd-threshold">Pico à tarde (14h–18h)</span> correlaciona com temperatura ambiente mais alta e maior carga de refrigeração. Pico de madrugada pode indicar operador que faz rondas nocturnas. Use este padrão para <strong>dimensionar a escala da equipa técnica</strong> no horário de maior incidência.
       </div>
       <div class="chart-container-sm position-relative">
         <div class="empty-chart" id="hora-empty" style="min-height:240px">

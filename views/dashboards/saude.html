@@ -59,6 +59,9 @@
         <span class="panel-title">Distribuição da Frota</span>
         <span class="panel-badge">por criticidade</span>
       </div>
+      <div class="panel-desc">
+        A rosca mostra a proporção de compressores por nível de criticidade. <strong>Ideal: &gt;70% em Normal</strong> (azul/verde). Se a fatia <span class="pd-threshold">Crítica (vermelha)</span> ultrapassar 10% da frota, é necessário um plano de intervenção imediata — não apenas chamados pontuais.
+      </div>
       <div class="chart-container-sm position-relative">
         <div class="loading-overlay" id="saude-loading"><div class="spinner-lg"></div><span>Carregando…</span></div>
         <canvas id="chart-donut"></canvas>
@@ -73,6 +76,9 @@
         <span class="panel-title">Score Médio por Loja</span>
         <span class="panel-badge">risco relativo</span>
       </div>
+      <div class="panel-desc">
+        Barras cinza = <strong>score ML médio</strong> dos compressores por loja (eixo esq., %). Linha vermelha = nº de devices críticos (eixo dir.). <span class="pd-threshold">Lojas com barra alta E linha vermelha &gt; 0</span> são prioridade máxima: risco elevado confirmado por alarmes activos.
+      </div>
       <div class="chart-container position-relative">
         <canvas id="chart-lojas"></canvas>
       </div>
@@ -84,6 +90,9 @@
       <div class="panel-header">
         <span class="panel-title">Top 10 — Prioridade de Manutenção</span>
         <span class="panel-badge">maior risco</span>
+      </div>
+      <div class="panel-desc">
+        Ranking calculado pelo <strong>score ML combinado com criticidade</strong>. Dispositivos no topo devem ser inspecionados em menos de 48h. Use <strong>% Degelo</strong> para detectar se o problema é térmico (<span class="pd-threshold">&gt;30% = degelo excessivo</span>) e <strong>Erro vs SP</strong> para identificar compressores que não conseguem atingir a temperatura-alvo.
       </div>
       <div class="table-responsive">
         <table class="data-table">

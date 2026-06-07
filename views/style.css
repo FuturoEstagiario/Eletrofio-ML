@@ -516,11 +516,24 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 1rem;
+  margin-bottom: .5rem;
   gap: .75rem;
   padding-bottom: .75rem;
   border-bottom: 1px solid var(--border);
 }
+.panel-desc {
+  font-size: .73rem;
+  color: var(--muted);
+  line-height: 1.58;
+  padding: .4rem .65rem;
+  margin-bottom: .9rem;
+  border-left: 2px solid rgba(168,149,110,.22);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  background: rgba(255,255,255,.018);
+}
+.panel-desc strong { color: var(--beige); font-weight: 600; }
+.panel-desc .pd-threshold { color: #ef4444; font-weight: 600; }
+.panel-desc .pd-ok       { color: #4ade80; font-weight: 600; }
 .panel-title {
   font-size: .86rem;
   font-weight: 700;

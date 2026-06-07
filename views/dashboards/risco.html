@@ -49,7 +49,10 @@
       <span class="panel-title">Dispositivos em risco</span>
       <span class="panel-count" id="risco-count">—</span>
     </div>
-    <div class="filter-bar" style="padding:0">
+    <div class="panel-desc" style="margin-top:.2rem">
+    <strong>Score composto</strong> = ML (×40%) + Criticidade (×25%) + Degelo (×20%) + Desvio de Setpoint (×15%). A <strong>barra de progresso</strong> mostra o risco actual; a linha fina dentro dela é a média histórica — <span class="pd-threshold">se a barra ultrapassou a linha, o risco está a agravar-se</span>. Use os filtros para focar nos casos urgentes (C + A com score &gt; 70%).
+  </div>
+  <div class="filter-bar" style="padding:0">
       <span class="filter-label">Criticidade:</span>
       <div class="crit-check-group" id="crit-filters">
         <span class="crit-check-btn crit-btn-C" data-crit="C">C Crítica</span>

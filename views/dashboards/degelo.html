@@ -51,6 +51,9 @@
         <span class="panel-title">Fracção de Degelo por Dispositivo</span>
         <span class="alert-threshold"><i class="bi bi-dash-lg"></i> Threshold 30%</span>
       </div>
+      <div class="panel-desc">
+        Cada barra = % do tempo em modo degelo nas últimas 24h. <span class="pd-threshold">Acima de 30% (linha vermelha)</span> = degelo excessivo — suspeitar de bloqueio de condensador, sensor defeituoso ou isolamento comprometido. <strong>Abaixo de 5%</strong> pode indicar degelo desactivado: gelo acumula-se progressivamente até travar o compressor.
+      </div>
       <div class="chart-container position-relative">
         <div class="loading-overlay" id="degelo-loading"><div class="spinner-lg"></div><span>Carregando…</span></div>
         <div id="chart-degelo"></div>
@@ -62,6 +65,9 @@
     <div class="card-panel h-100">
       <div class="panel-header">
         <span class="panel-title">Tabela de Degelo</span>
+      </div>
+      <div class="panel-desc">
+        <strong>Frequência ideal:</strong> 2–4 ciclos/dia com duração de 20–30 min. <span class="pd-threshold">Muitos ciclos curtos (&lt;10 min)</span> = degelo ineficaz ou sensor com falha intermitente. <span class="pd-threshold">Poucos ciclos longos (&gt;45 min)</span> = acumulação severa de gelo — verificar porta de câmara e vedação de isolamento.
       </div>
       <div class="table-responsive" style="max-height:420px;overflow-y:auto">
         <table class="data-table">

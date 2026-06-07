@@ -55,6 +55,9 @@
         <span class="panel-title">Temperatura vs Setpoint (24h)</span>
         <span class="panel-badge">5 min / ponto</span>
       </div>
+      <div class="panel-desc">
+        Linha azul = temperatura medida; tracejado = setpoint alvo; <strong>banda cinza</strong> = tolerância de ±2 °C. Leituras acima da banda por mais de 30 minutos consecutivos são anomalias activas. <span class="pd-ok">Picos abruptos seguidos de recuperação rápida</span> são ciclos de degelo normais — o problema surge quando a temperatura <span class="pd-threshold">não retorna ao setpoint</span> após o degelo terminar.
+      </div>
       <div class="chart-container position-relative">
         <div class="loading-overlay" id="temp-loading">
           <div class="spinner-lg"></div>
@@ -69,6 +72,9 @@
     <div class="card-panel h-100">
       <div class="panel-header">
         <span class="panel-title">Análise Estatística</span>
+      </div>
+      <div class="panel-desc">
+        <strong>Desvio padrão &gt; 2,5 °C</strong> = temperatura instável (compressor a lutar para manter o alvo). <strong>Taxa de variação &gt; 0,08 °C/min</strong> = tendência de aquecimento activa. <span class="pd-threshold">% tempo acima do setpoint &gt; 20%</span> recomenda manutenção preventiva urgente — o equipamento está constantemente fora do parâmetro de segurança alimentar.
       </div>
       <div class="analysis-panel" id="temp-stats">
         <div class="empty-chart" style="min-height:160px">

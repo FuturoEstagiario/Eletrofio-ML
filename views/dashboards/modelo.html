@@ -49,6 +49,9 @@
       <div class="panel-header">
         <span class="panel-title">Feature Importance — Random Forest</span>
       </div>
+      <div class="panel-desc">
+        Mostra o peso de cada variável de temperatura na decisão do modelo. <span class="pd-threshold">Barras vermelhas (&gt;25%)</span> são dominantes — a variável mais influente para prever falhas. Um modelo bem calibrado distribui a importância entre <strong>3 ou mais features</strong>: se uma única variável ultrapassar 50%, pode indicar overfitting nos dados de treino.
+      </div>
       <div class="position-relative" style="min-height:280px">
         <div class="loading-overlay" id="modelo-loading"><div class="spinner-lg"></div><span>Carregando…</span></div>
         <div class="chart-container-sm">
@@ -63,6 +66,9 @@
       <div class="panel-header">
         <span class="panel-title">Distribuição de Scores</span>
       </div>
+      <div class="panel-desc">
+        Proporção de compressores em cada faixa de risco. <span class="pd-ok">Ideal: maioria em Baixo (&lt;40%)</span>. <span class="pd-threshold">Se &gt;30% estiver em Alto (&gt;70%)</span>, o modelo pode estar descalibrado — ou existe um problema real sistémico na frota que merece inspecção física de uma amostra aleatória para validar.
+      </div>
       <div class="chart-container-sm">
         <canvas id="chart-scores"></canvas>
       </div>
@@ -74,6 +80,9 @@
   <div class="col-12 col-md-6 anim-fade-in-up" style="animation-delay:.12s">
     <div class="card-panel">
       <div class="panel-header"><span class="panel-title">Random Forest</span></div>
+      <div class="panel-desc">
+        Classifica o risco por <strong>aprendizagem supervisionada</strong> em dados históricos de temperatura. Mais estimadores = modelo mais robusto mas mais lento a inferir. O nº de features indica quantas variáveis de telemetria foram usadas no treino — mais features exigem mais dados para generalizar correctamente.
+      </div>
       <div id="info-rf" style="padding:.8rem 1rem;font-size:.83rem">
         <div class="empty-chart" style="min-height:120px"><i class="bi bi-cpu"></i><p>Modelo não carregado</p></div>
       </div>
@@ -82,6 +91,9 @@
   <div class="col-12 col-md-6 anim-fade-in-up" style="animation-delay:.14s">
     <div class="card-panel">
       <div class="panel-header"><span class="panel-title">OneClass SVM</span></div>
+      <div class="panel-desc">
+        Aprende o padrão <span class="pd-ok">"normal"</span> de operação e detecta desvios — útil para <strong>anomalias que nunca ocorreram no histórico de treino</strong>. O parâmetro <em>nu</em> controla a taxa esperada de falsos positivos: nu=0.1 significa que até 10% dos dados normais podem ser sinalizados como anomalia. Usado em conjunto com o RF reduz falsos negativos.
+      </div>
       <div id="info-ocsvm" style="padding:.8rem 1rem;font-size:.83rem">
         <div class="empty-chart" style="min-height:120px"><i class="bi bi-shield-exclamation"></i><p>Modelo não carregado</p></div>
       </div>

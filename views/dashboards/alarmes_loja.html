@@ -50,6 +50,9 @@
       <div class="panel-header">
         <span class="panel-title">Top 15 Lojas — Distribuição por Criticidade</span>
       </div>
+      <div class="panel-desc">
+        Barras empilhadas: <span class="pd-threshold">vermelho = Crítico</span>, laranja = Alto, amarelo = Médio. A altura total é o volume de alarmes da loja. Uma loja com pouco volume mas muita área vermelha é tão prioritária quanto uma com alto volume — <strong>a criticidade pesa mais que a quantidade</strong>.
+      </div>
       <div class="chart-container position-relative">
         <div class="loading-overlay" id="aloja-loading"><div class="spinner-lg"></div><span>Carregando…</span></div>
         <canvas id="chart-lojas-bar"></canvas>
@@ -61,6 +64,9 @@
     <div class="card-panel h-100">
       <div class="panel-header">
         <span class="panel-title">Distribuição por Criticidade</span>
+      </div>
+      <div class="panel-desc">
+        Proporção global de todos os alarmes por nível. O ideal é a fatia <span class="pd-ok">Informativo (cinza)</span> ser dominante. <span class="pd-threshold">Crítico + Alto acima de 30%</span> do total indica problema sistémico que não se resolve com chamados isolados — requer revisão do plano de manutenção preventiva.
       </div>
       <div class="chart-container-sm position-relative">
         <canvas id="chart-crit-doughnut"></canvas>
@@ -74,7 +80,9 @@
         <span class="panel-title">Análise de Pareto — 80/20</span>
         <span class="panel-badge">regra 80/20</span>
       </div>
-      <p style="font-size:.75rem;color:var(--muted);margin:.25rem 0 .75rem">Lojas em <span style="color:#ef4444;font-weight:700">vermelho</span> concentram 80% dos alarmes — foque esforço nelas primeiro.</p>
+      <div class="panel-desc">
+        A <strong>linha laranja</strong> acumula o % de alarmes à medida que avança nas lojas (da mais problemática para a menos). Onde ela atinge <strong>80%</strong> (linha tracejada horizontal), estão as lojas responsáveis pela maioria dos problemas. <span class="pd-threshold">Barras em vermelho</span> = lojas dentro do grupo 80% — concentrar o esforço nelas tem o maior retorno operacional.
+      </div>
       <div style="height:280px;position:relative">
         <canvas id="chart-pareto"></canvas>
       </div>
@@ -85,6 +93,9 @@
     <div class="card-panel">
       <div class="panel-header">
         <span class="panel-title">Ranking de Lojas</span>
+      </div>
+      <div class="panel-desc">
+        Ordenado por volume total de alarmes. As colunas <strong>C, A, M, B, I</strong> mostram a distribuição por criticidade — use-as para distinguir lojas com muitos alarmes menores (baixo risco real) de lojas com poucos alarmes mas todos críticos (alto risco real). <span class="pd-threshold">Sem Trat. elevado</span> indica alarmes ignorados — possível falta de processo ou sobrecarga da equipa.
       </div>
       <div class="table-responsive">
         <table class="data-table">
