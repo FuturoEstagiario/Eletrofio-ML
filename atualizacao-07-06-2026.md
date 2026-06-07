@@ -145,6 +145,32 @@ GET /api/monitoramento/reincidencia
 
 ---
 
+## 9. Fix de Performance — Dashboards Lentos e Indicador "API Offline"
+
+**Ficheiros:** `poc_app.py`, `views/dashboard.js`
+
+**Problema:** `/api/alarmes` e `/api/unidades` chamavam a API externa do EletroFrio a cada request HTTP, bloqueando o carregamento do dashboard enquanto a API externa estava lenta ou inativa. O indicador de saúde ficava sempre vermelho porque verificava `api_ok` (API externa online) em vez de `data_ok` (dados disponíveis em cache).
+
+**Fix em `poc_app.py`:**
+- `/api/alarmes` passa a servir `_cache["alarmes_raw"]` — dados carregados do parquet no startup
+- `/api/unidades` passa a servir `_cache["unidades"]` — idem
+- `/api/health` adiciona campo `data_ok: bool` (True quando parquet carregado com sucesso), separado de `api: bool` (API externa online)
+
+**Fix em `views/dashboard.js`:**
+
+| Estado | Antes | Depois |
+|---|---|---|
+| Dados disponíveis + API externa online | Verde | Verde "API conectada" |
+| Dados em cache + API externa offline | Vermelho | Amarelo "Cache local" |
+| Flask não responde | Vermelho | Vermelho "Sem dados" |
+| A carregar (catch) | Vermelho | Amarelo "A carregar…" |
+
+- `setInterval(verificarSaude, 30000)` adicionado — indicador atualiza automaticamente a cada 30s
+
+**Impacto:** tempo de resposta de `/api/alarmes` e `/api/unidades` passa de variável (dependia da latência da API externa, potencialmente >5 s) para constante (~2 ms desde memória).
+
+---
+
 ## Estado do Projecto Após a Sessão
 
 | Componente | Estado |
@@ -157,6 +183,8 @@ GET /api/monitoramento/reincidencia
 | Chamados | Persistidos no PostgreSQL, endpoint resolver, KPI resolvidos |
 | Histórico de scores | Gravado a cada colecta em `scores_historico` (PostgreSQL) |
 | Análise de reincidência | Disponível via `/api/monitoramento/reincidencia` |
+| Performance dashboards | `/api/alarmes` e `/api/unidades` servem do cache (~2 ms) |
+| Indicador de saúde | 3 estados: verde/amarelo/vermelho com auto-refresh 30s |
 | API para integração RAG/WhatsApp | Pronta (25+ endpoints JSON públicos) |
 | Autenticação | Não implementada (PoC) |
 | Testes | Não implementados |
