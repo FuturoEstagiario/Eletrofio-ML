@@ -23,6 +23,7 @@ from datetime import datetime
 sys.path.insert(0, os.path.dirname(__file__))
 
 import numpy as np
+import pandas as pd
 from flask import Flask, jsonify, render_template, request
 from whitenoise import WhiteNoise
 from src.api_client import buscar_alarmes, buscar_unidades, buscar_telemetria, abrir_chamado
@@ -68,6 +69,7 @@ _cache = {
     "chamados_log": [],
     "ts": time.time(), "ts_tele": None,
     "api_ok": False,
+    "data_ok": False,
 }
 CACHE_TTL = 600
 
@@ -77,12 +79,23 @@ def _fetch_background():
         try:
             _cache["alarmes_raw"] = buscar_alarmes()
             _cache["api_ok"] = True
+            _cache["data_ok"] = True
         except Exception:
-            pass
+            _cache["api_ok"] = False
+            try:
+                df = pd.read_parquet("dados_coletados/alarmes.parquet")
+                _cache["alarmes_raw"] = df.where(pd.notnull(df), None).to_dict("records")
+                _cache["data_ok"] = True
+            except Exception:
+                pass
         try:
             _cache["unidades"] = buscar_unidades()
         except Exception:
-            pass
+            try:
+                df = pd.read_parquet("dados_coletados/unidades.parquet")
+                _cache["unidades"] = df.where(pd.notnull(df), None).to_dict("records")
+            except Exception:
+                pass
         _cache["ts"] = time.time()
 
         _PRIO = {"C": 0, "A": 1, "M": 2, "B": 3, "I": 4}
@@ -187,7 +200,7 @@ def dashboard():
     import pandas as pd
     alarmes_raw = _cache["alarmes_raw"]
     unidades    = _cache["unidades"]
-    erros       = {} if _cache.get("api_ok") else {"status": "Carregando dados da API, aguarde e recarregue em instantes..."}
+    erros       = {} if _cache.get("data_ok") else {"status": "Carregando dados da API, aguarde e recarregue em instantes..."}
     df = processar_alarmes(alarmes_raw) if alarmes_raw else pd.DataFrame()
 
     stats        = _computar_stats(df)
