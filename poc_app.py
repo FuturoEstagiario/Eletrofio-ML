@@ -514,6 +514,16 @@ def api_abrir_chamado():
     for campo in required:
         if campo not in body:
             return jsonify({"status": "erro", "mensagem": f"Campo obrigatório ausente: {campo}"}), 400
+    entry = {
+        "ts": datetime.now().isoformat(),
+        "dispositivo_id": body["dispositivo_id"],
+        "loja_nome": body["loja_nome"],
+        "tag": body["tag"],
+        "motivo": body["motivo_ia"],
+        "status": "aberto",
+        "origem": "api",
+    }
+
     try:
         resposta = abrir_chamado(
             loja_id=int(body["loja_id"]),
@@ -523,17 +533,18 @@ def api_abrir_chamado():
             motivo_ia=str(body["motivo_ia"]),
             requer_tecnico=bool(body.get("requer_tecnico", True)),
         )
-        _cache["chamados_log"].append({
-            "ts": datetime.now().isoformat(),
-            "dispositivo_id": body["dispositivo_id"],
-            "loja_nome": body["loja_nome"],
-            "tag": body["tag"],
-            "motivo": body["motivo_ia"],
-            "status": "aberto",
-        })
-        return jsonify({"status": "ok", "resposta": resposta})
+        log.info(f"Chamado aberto via API — device {body['dispositivo_id']} loja {body['loja_nome']}")
+        _cache["chamados_log"].append(entry)
+        return jsonify({"status": "ok", "resposta": resposta, "origem": "api"})
     except Exception as e:
-        return jsonify({"status": "erro", "mensagem": str(e)}), 500
+        log.warning(f"API chamado indisponível ({type(e).__name__}), guardando localmente — device {body['dispositivo_id']}")
+        entry["origem"] = "local"
+        _cache["chamados_log"].append(entry)
+        return jsonify({
+            "status": "ok",
+            "origem": "local",
+            "mensagem": "API de chamados indisponível. Chamado registado localmente nesta sessão.",
+        })
 
 
 # ── Rotas — Dashboards HTML ───────────────────────────────────────────────────
