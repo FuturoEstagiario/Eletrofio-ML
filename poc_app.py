@@ -500,7 +500,7 @@ def dashboard():
 @app.route("/api/alarmes")
 def api_alarmes():
     try:
-        dados = buscar_alarmes()
+        dados = _cache["alarmes_raw"] or []
         return jsonify({"status": "ok", "total": len(dados), "dados": dados})
     except Exception as e:
         return jsonify({"status": "erro", "mensagem": str(e)}), 500
@@ -508,23 +508,20 @@ def api_alarmes():
 
 @app.route("/api/health")
 def api_health():
-    """Verifica se a API da Eletrofrio está acessível e se os modelos estão carregados."""
     return jsonify({
-        "status": "ok",
-        "api": _cache.get("api_ok", False),
-        "modelos": {
-            "rf": _modelos["rf"] is not None,
-            "ocsvm": _modelos["ocsvm"] is not None,
-        },
+        "status":            "ok",
+        "data_ok":           _cache.get("data_ok", False),
+        "api":               _cache.get("api_ok", False),
+        "modelos":           {"rf": _modelos["rf"] is not None, "ocsvm": _modelos["ocsvm"] is not None},
         "modelos_carregados": _modelos_carregados,
-        "cache_ts": _cache["ts"],
+        "cache_ts":          _cache["ts"],
     })
 
 
 @app.route("/api/unidades")
 def api_unidades():
     try:
-        dados = buscar_unidades()
+        dados = _cache["unidades"] or []
         return jsonify({"status": "ok", "total": len(dados), "dados": dados})
     except Exception as e:
         return jsonify({"status": "erro", "mensagem": str(e)}), 500

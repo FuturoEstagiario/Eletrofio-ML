@@ -92,20 +92,22 @@
       const json = await res.json();
       const el   = document.getElementById("api-status-label");
       if (!el) return;
-      if (json.status === "ok" && json.api) {
-        el.innerHTML =
-          `<span class="text-success"><i class="bi bi-circle-fill" style="font-size:.55rem"></i> API conectada</span>`;
+      if (json.status === "ok" && json.data_ok) {
+        const apiLabel = json.api ? "API conectada" : "Cache local";
+        const color    = json.api ? "text-success" : "text-warning";
+        el.innerHTML = `<span class="${color}"><i class="bi bi-circle-fill" style="font-size:.55rem"></i> ${apiLabel}</span>`;
       } else {
         el.innerHTML =
-          `<span class="text-danger"><i class="bi bi-circle-fill" style="font-size:.55rem"></i> API indispon&iacute;vel</span>`;
+          `<span class="text-danger"><i class="bi bi-circle-fill" style="font-size:.55rem"></i> Sem dados</span>`;
       }
     } catch {
       const el = document.getElementById("api-status-label");
       if (el) el.innerHTML =
-        `<span class="text-danger"><i class="bi bi-circle-fill" style="font-size:.55rem"></i> API indispon&iacute;vel</span>`;
+        `<span class="text-warning"><i class="bi bi-circle-fill" style="font-size:.55rem"></i> A carregar&hellip;</span>`;
     }
   }
   verificarSaude();
+  setInterval(verificarSaude, 30000);
 
   // ── Telemetria ──────────────────────────────────────────────────────────────
 
