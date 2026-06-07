@@ -79,6 +79,8 @@ log.info(f"BASE_DIR    : {_BASE_DIR}")
 log.info(f"PARQUET_DIR : {_PARQUET_DIR}")
 log.info(f"alarmes.parquet  existe: {os.path.exists(os.path.join(_PARQUET_DIR, 'alarmes.parquet'))}")
 log.info(f"unidades.parquet existe: {os.path.exists(os.path.join(_PARQUET_DIR, 'unidades.parquet'))}")
+log.info(f"tele_features.parquet existe: {os.path.exists(os.path.join(_PARQUET_DIR, 'tele_features.parquet'))}")
+log.info(f"tele_series.parquet   existe: {os.path.exists(os.path.join(_PARQUET_DIR, 'tele_series.parquet'))}")
 
 _cache = {
     "alarmes_raw": [], "unidades": [],
@@ -104,6 +106,31 @@ def _parquet_load_unidades():
     return df.where(pd.notnull(df), None).to_dict("records")
 
 
+def _parquet_load_tele_features():
+    path = os.path.join(_PARQUET_DIR, "tele_features.parquet")
+    df = pd.read_parquet(path)
+    result = {}
+    for _, row in df.iterrows():
+        did = int(row["dispositivo_id"])
+        feats = {k: (None if pd.isna(v) else v) for k, v in row.items() if k != "dispositivo_id"}
+        result[did] = [feats]
+    return result
+
+
+def _parquet_load_tele_series():
+    path = os.path.join(_PARQUET_DIR, "tele_series.parquet")
+    df = pd.read_parquet(path)
+    serie_cols = [c for c in df.columns if c not in ("dispositivo_id", "label_idx", "label")]
+    result = {}
+    for did, group in df.groupby("dispositivo_id"):
+        g = group.sort_values("label_idx")
+        sd = {"labels": g["label"].tolist()}
+        for col in serie_cols:
+            sd[col] = g[col].tolist()
+        result[int(did)] = sd
+    return result
+
+
 # ── Pre-load síncrono de parquet — garante data_ok=True antes do 1.º request ──
 log.info("PRE-LOAD startup: carregando parquet...")
 try:
@@ -121,6 +148,18 @@ except Exception as _pe:
 
 _cache["ts"] = time.time()
 log.info(f"PRE-LOAD concluído — data_ok={_cache['data_ok']} alarmes={len(_cache['alarmes_raw'])} unidades={len(_cache['unidades'])}")
+
+try:
+    _cache["tele_features"] = _parquet_load_tele_features()
+    log.info(f"PRE-LOAD tele_features OK — {len(_cache['tele_features'])} devices")
+except Exception as _pe:
+    log.warning(f"PRE-LOAD tele_features sem ficheiro (normal antes do 1.º coletar_tele.py): {_pe}")
+
+try:
+    _cache["tele_series"] = _parquet_load_tele_series()
+    log.info(f"PRE-LOAD tele_series OK — {len(_cache['tele_series'])} devices")
+except Exception as _pe:
+    log.warning(f"PRE-LOAD tele_series sem ficheiro (normal antes do 1.º coletar_tele.py): {_pe}")
 
 
 def _run_cache_cycle():
