@@ -80,6 +80,13 @@ try:
 except Exception as _e:
     log.warning(f"DB: init_tables falhou (chamados guardados em memória): {_e}")
 
+try:
+    from src.db import init_scores_historico as _init_scores
+    _init_scores()
+    log.info("DB: tabela 'scores_historico' inicializada")
+except Exception as _e:
+    log.warning(f"DB: init_scores_historico falhou: {_e}")
+
 
 class _NaNSafeProvider(DefaultJSONProvider):
     @staticmethod
@@ -320,6 +327,39 @@ def _trigger_retrain_if_needed():
         threading.Thread(target=_background_train, daemon=True).start()
 
 
+def _batch_score_devices():
+    """Corre inferência em todos os devices do cache e grava em scores_historico."""
+    ocsvm     = _modelos.get("ocsvm")
+    feat_keys = ocsvm.feature_cols if ocsvm is not None and ocsvm.feature_cols else None
+    if not feat_keys or (_modelos["rf"] is None and ocsvm is None):
+        log.info("[SCORES] Modelos ou feature_cols não disponíveis — batch scoring ignorado")
+        return
+
+    from src.db import inserir_score
+    gravados = 0
+    for did, feat_list in list(_cache.get("tele_features", {}).items()):
+        try:
+            feats = feat_list[-1] if isinstance(feat_list, list) and feat_list else {}
+            if not feats:
+                continue
+            row = [feats.get(c, 0.0) for c in feat_keys]
+            X   = np.nan_to_num(np.array(row, dtype=float).reshape(1, -1), nan=0.0)
+
+            risk_score = None
+            anomaly    = None
+            if _modelos["rf"] is not None:
+                risk_score = round(float(_modelos["rf"].predict_proba(X)[0]), 4)
+            if ocsvm is not None:
+                anomaly = bool(ocsvm.predict_raw(X)[0] == -1)
+
+            inserir_score(int(did), risk_score, anomaly)
+            gravados += 1
+        except Exception as e:
+            log.warning(f"[SCORES] Device {did}: {e}")
+
+    log.info(f"[SCORES] {gravados} scores gravados em scores_historico")
+
+
 def _scheduled_collect():
     log.info("[PIPELINE] Colecta agendada iniciada...")
     try:
@@ -332,6 +372,7 @@ def _scheduled_collect():
             log.info("[PIPELINE] Cache tele actualizado após colecta")
         except Exception as ce:
             log.warning(f"[PIPELINE] Reload cache tele falhou: {ce}")
+        _batch_score_devices()
         _trigger_retrain_if_needed()
     except Exception as e:
         log.error(f"[PIPELINE] Colecta agendada falhou: {type(e).__name__}: {e}", exc_info=True)
@@ -940,6 +981,59 @@ def api_dashboard_modelo():
                 "score_medio": round(float(np.mean(scores)), 4) if scores else None,
                 "modelos_carregados": _modelos_carregados,
             },
+        })
+    except Exception as e:
+        return jsonify({"status": "erro", "mensagem": str(e)}), 500
+
+
+@app.route("/api/monitoramento/scores/<int:dispositivo_id>")
+def api_monitoramento_scores(dispositivo_id):
+    """Histórico de risk_score e anomaly para um device específico."""
+    try:
+        from src.db import listar_scores_device
+        rows = listar_scores_device(dispositivo_id)
+        dados = [
+            {
+                "ts":         r["ts"].isoformat() if r["ts"] else None,
+                "risk_score": r["risk_score"],
+                "anomaly":    r["anomaly"],
+            }
+            for r in rows
+        ]
+        return jsonify({
+            "status":         "ok",
+            "dispositivo_id": dispositivo_id,
+            "n_registos":     len(dados),
+            "dados":          dados,
+        })
+    except Exception as e:
+        return jsonify({"status": "erro", "mensagem": str(e)}), 500
+
+
+@app.route("/api/monitoramento/reincidencia")
+def api_monitoramento_reincidencia():
+    """Ranking de devices por número de chamados + MTTR."""
+    try:
+        from src.db import stats_reincidencia
+        rows = stats_reincidencia()
+        dados = [
+            {
+                "dispositivo_id":     r["dispositivo_id"],
+                "loja_nome":          r["loja_nome"],
+                "tag":                r["tag"],
+                "total_chamados":     r["total_chamados"],
+                "chamados_resolvidos": r["chamados_resolvidos"],
+                "chamados_abertos":   r["chamados_abertos"],
+                "mttr_horas":         float(r["mttr_horas"]) if r["mttr_horas"] is not None else None,
+                "primeiro_chamado":   r["primeiro_chamado"].isoformat() if r["primeiro_chamado"] else None,
+                "ultimo_chamado":     r["ultimo_chamado"].isoformat() if r["ultimo_chamado"] else None,
+            }
+            for r in rows
+        ]
+        return jsonify({
+            "status":      "ok",
+            "n_devices":   len(dados),
+            "dados":       dados,
         })
     except Exception as e:
         return jsonify({"status": "erro", "mensagem": str(e)}), 500

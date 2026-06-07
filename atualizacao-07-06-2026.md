@@ -90,6 +90,61 @@ Endpoint `POST /api/feedback` permite que técnicos confirmem ou rejeitem anomal
 
 ---
 
+## 7. Persistência de Chamados no PostgreSQL
+
+**Ficheiros:** `src/db.py`, `poc_app.py`, `views/dashboards/chamados.js`, `views/dashboards/chamados.html`
+
+Tabela `chamados` criada no PostgreSQL no startup automático:
+
+```sql
+CREATE TABLE IF NOT EXISTS chamados (
+    id SERIAL PRIMARY KEY, dispositivo_id INTEGER, loja_id INTEGER,
+    loja_nome TEXT, tag TEXT, motivo TEXT, tecnico_presencial BOOLEAN,
+    status TEXT DEFAULT 'aberto', criado_em TIMESTAMP DEFAULT NOW(), resolvido_em TIMESTAMP
+)
+```
+
+- Chamados persistidos no PostgreSQL ao criar (fallback em memória se BD cair)
+- `PATCH /api/chamados/<id>/resolver` marca chamado como `fechado`
+- Dashboard Chamados lê do PostgreSQL — histórico persiste entre deploys
+- KPI "Resolvidos" + botão "Resolver" por linha adicionados ao frontend
+
+---
+
+## 8. Histórico de Scores ML + Análise de Reincidência
+
+**Ficheiros:** `src/db.py`, `poc_app.py`
+
+### Histórico de Scores
+
+Tabela `scores_historico` criada no startup:
+
+```sql
+CREATE TABLE IF NOT EXISTS scores_historico (
+    id SERIAL PRIMARY KEY, dispositivo_id INTEGER NOT NULL,
+    risk_score FLOAT, anomaly BOOLEAN, ts TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_scores_did_ts ON scores_historico (dispositivo_id, ts DESC);
+```
+
+Função `_batch_score_devices()` corre após cada colecta agendada (6h): infere RF + OCC SVM em todos os devices do cache e grava um registo por device. Acumula tendência ao longo do tempo.
+
+### Análise de Reincidência
+
+Query sobre `chamados` (sem nova tabela): calcula por device o total de chamados, resolvidos, abertos e MTTR (tempo médio de resolução em horas).
+
+### Endpoints de monitoramento
+
+```
+GET /api/monitoramento/scores/<dispositivo_id>
+    → histórico de risk_score e anomaly para um device específico
+
+GET /api/monitoramento/reincidencia
+    → ranking de devices por reincidência + MTTR médio
+```
+
+---
+
 ## Estado do Projecto Após a Sessão
 
 | Componente | Estado |
@@ -98,7 +153,10 @@ Endpoint `POST /api/feedback` permite que técnicos confirmem ou rejeitem anomal
 | Dashboards ML (Temperatura, Saúde, Risco, Degelo, Pressão, Financeiro) | Funcional |
 | Dashboard Qualidade do Modelo | Funcional |
 | Modelos RF + OCC SVM | Treinados com dados reais (~25 devices, ~35 features) |
-| Pipeline automático | Implementado (colecta 6h, re-treino automático, feedback loop) |
-| API para integração RAG/WhatsApp | Pronta (20+ endpoints JSON públicos) |
+| Pipeline automático | Colecta 6h, re-treino automático, feedback loop, batch scoring |
+| Chamados | Persistidos no PostgreSQL, endpoint resolver, KPI resolvidos |
+| Histórico de scores | Gravado a cada colecta em `scores_historico` (PostgreSQL) |
+| Análise de reincidência | Disponível via `/api/monitoramento/reincidencia` |
+| API para integração RAG/WhatsApp | Pronta (25+ endpoints JSON públicos) |
 | Autenticação | Não implementada (PoC) |
 | Testes | Não implementados |
