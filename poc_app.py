@@ -66,7 +66,8 @@ _cache = {
     "tele_features": {},
     "tele_series": {},
     "chamados_log": [],
-    "ts": None, "ts_tele": None,
+    "ts": time.time(), "ts_tele": None,
+    "api_ok": False,
 }
 CACHE_TTL = 600
 
@@ -75,6 +76,7 @@ def _fetch_background():
     while True:
         try:
             _cache["alarmes_raw"] = buscar_alarmes()
+            _cache["api_ok"] = True
         except Exception:
             pass
         try:
@@ -83,7 +85,9 @@ def _fetch_background():
             pass
         _cache["ts"] = time.time()
 
-        device_ids = set(a.get("dispositivoId") for a in _cache["alarmes_raw"] if a.get("dispositivoId"))
+        _PRIO = {"C": 0, "A": 1, "M": 2, "B": 3, "I": 4}
+        _sorted = sorted(_cache["alarmes_raw"], key=lambda a: _PRIO.get(a.get("criticidade", "I"), 99))
+        device_ids = list(dict.fromkeys(a.get("dispositivoId") for a in _sorted if a.get("dispositivoId")))[:30]
         for did in device_ids:
             try:
                 raw = buscar_telemetria(did)
@@ -183,7 +187,7 @@ def dashboard():
     import pandas as pd
     alarmes_raw = _cache["alarmes_raw"]
     unidades    = _cache["unidades"]
-    erros       = {} if _cache["ts"] else {"status": "Carregando dados, aguarde e recarregue em instantes..."}
+    erros       = {} if _cache.get("api_ok") else {"status": "Carregando dados da API, aguarde e recarregue em instantes..."}
     df = processar_alarmes(alarmes_raw) if alarmes_raw else pd.DataFrame()
 
     stats        = _computar_stats(df)
@@ -220,15 +224,9 @@ def api_alarmes():
 @app.route("/api/health")
 def api_health():
     """Verifica se a API da Eletrofrio está acessível e se os modelos estão carregados."""
-    api_ok = False
-    try:
-        buscar_alarmes()
-        api_ok = True
-    except Exception:
-        pass
     return jsonify({
         "status": "ok",
-        "api": api_ok,
+        "api": _cache.get("api_ok", False),
         "modelos": {
             "rf": _modelos["rf"] is not None,
             "ocsvm": _modelos["ocsvm"] is not None,

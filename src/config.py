@@ -1,7 +1,7 @@
 import os
 
 API_BASE = "https://credenciamento.eletrofrio.com.br:5900/galileo/api/api_hackathon"
-API_TIMEOUT = 300
+API_TIMEOUT = 12
 API_EQUIPE = "EletroFrio ML"
 
 WINDOW_HOURS = 6
