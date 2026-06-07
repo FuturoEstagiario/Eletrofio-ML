@@ -1,15 +1,4 @@
 # -*- coding: utf-8 -*-
-"""
-Treina RF e OneClassSVM com os dados reais do tele_features.parquet.
-Execute LOCALMENTE depois de ter corrido coletar_tele.py.
-
-Gera:
-  models/rf_eletrofrio.pkl
-  models/svm_anomalia.pkl
-  models/scaler.pkl
-  models/feature_cols.pkl
-"""
-
 import os
 import sys
 import logging
@@ -19,30 +8,18 @@ sys.path.insert(0, os.path.dirname(__file__))
 logging.basicConfig(level=logging.INFO, format="[TREINO] %(message)s", stream=sys.stderr)
 log = logging.getLogger()
 
-import joblib
 import numpy as np
 import pandas as pd
+import joblib
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import StratifiedKFold
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 from src.models import RandomForestModel, OneClassSVMModel
 from src.config import MODELS_DIR
 
-PARQUET_DIR = os.path.join(os.path.dirname(__file__), "dados_coletados")
-CRIT_ORDER  = {"C": 4, "A": 3, "M": 2, "B": 1, "I": 0}
-
-# Colunas usadas pelo poc_app.py na inferência — a ordem importa
-FEATURE_COLS = [
-    "temp_media", "temp_maxima", "temp_minima",
-    "temp_amplitude", "temp_volatilidade", "temp_tendencia",
-]
-
-# Mapeamento: nome no parquet → nome esperado pelo modelo
-COL_MAP = {
-    "temp_mean":              "temp_media",
-    "temp_max":               "temp_maxima",
-    "temp_min":               "temp_minima",
-    "temp_amplitude":         "temp_amplitude",
-    "temp_std":               "temp_volatilidade",
-    "temp_taxa_variacao_media": "temp_tendencia",
-}
+PARQUET_DIR  = os.path.join(os.path.dirname(__file__), "dados_coletados")
+CRIT_ORDER   = {"C": 4, "A": 3, "M": 2, "B": 1, "I": 0}
+MIN_VARIANCE = 1e-6
 
 log.info("═" * 55)
 log.info("EletroFrio ML — Treino de Modelos com Dados Reais")
@@ -51,13 +28,12 @@ log.info("═" * 55)
 # ── 1. Carregar features ─────────────────────────────────────────────────────
 log.info("Carregando tele_features.parquet...")
 df = pd.read_parquet(os.path.join(PARQUET_DIR, "tele_features.parquet"))
-log.info(f"  {len(df)} devices, {len(df.columns)} colunas")
+log.info(f"  {len(df)} devices, {len(df.columns)} colunas brutas")
 
 # ── 2. Labels a partir de criticidade dos alarmes ────────────────────────────
 log.info("Calculando labels a partir de alarmes.parquet...")
 df_al = pd.read_parquet(os.path.join(PARQUET_DIR, "alarmes.parquet"))
 
-# Pior criticidade por device
 crit_por_device = (
     df_al.groupby("dispositivoId")["criticidade"]
     .apply(lambda s: max(s.dropna(), key=lambda c: CRIT_ORDER.get(c, 0), default="I"))
@@ -78,18 +54,28 @@ n_normais  = int((df["anomalo"] == 0).sum())
 log.info(f"  Labels: {n_anomalos} anomalos (C/A) | {n_normais} normais (M/B/I)")
 
 if n_normais == 0:
-    log.warning("  Nenhum device normal encontrado — usando M como normal para treino OCC SVM")
+    log.warning("  Nenhum device normal — usando M como normal")
     df.loc[df["criticidade"] == "M", "anomalo"] = 0
     n_normais = int((df["anomalo"] == 0).sum())
 
 if n_anomalos == 0 or n_normais == 0:
-    log.error("Classes desequilibradas demais — verifique os dados. Abortando.")
+    log.error("Classes desequilibradas demais. Abortando.")
     sys.exit(1)
 
-# ── 3. Matriz de features ────────────────────────────────────────────────────
-log.info("Construindo matriz de features...")
-df_X = df[list(COL_MAP.keys())].rename(columns=COL_MAP)
-X = np.nan_to_num(df_X.values, nan=0.0).astype(float)
+# ── 3. Auto-detectar features e filtrar variância zero ───────────────────────
+log.info("Detectando features úteis...")
+meta_cols = {"dispositivo_id", "criticidade", "anomalo"}
+num_cols  = [c for c in df.columns if c not in meta_cols and pd.api.types.is_numeric_dtype(df[c])]
+
+variances     = df[num_cols].var()
+FEATURE_COLS  = variances[variances > MIN_VARIANCE].index.tolist()
+dropped       = sorted(set(num_cols) - set(FEATURE_COLS))
+
+if dropped:
+    log.info(f"  Removidas {len(dropped)} cols variância≈0: {dropped}")
+log.info(f"  Features finais: {len(FEATURE_COLS)} colunas")
+
+X = np.nan_to_num(df[FEATURE_COLS].values, nan=0.0).astype(float)
 y = df["anomalo"].values.astype(int)
 log.info(f"  X shape: {X.shape}  |  positivos: {y.sum()}  negativos: {(y==0).sum()}")
 
@@ -101,11 +87,28 @@ rf = RandomForestModel()
 rf.treinar(X, y, busca_hiperpar=False)
 rf.salvar(os.path.join(MODELS_DIR, "rf_eletrofrio.pkl"))
 
-log.info("  Feature Importance:")
-importances = rf.model.feature_importances_
-for feat, imp in sorted(zip(FEATURE_COLS, importances), key=lambda x: -x[1]):
+n_splits = min(5, n_normais, n_anomalos)
+log.info(f"  Avaliando com Stratified {n_splits}-Fold CV...")
+cv = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=42)
+acc, prec, rec, f1s = [], [], [], []
+for tr_idx, te_idx in cv.split(X, y):
+    m = RandomForestClassifier(n_estimators=200, max_depth=20, random_state=42, n_jobs=-1)
+    m.fit(X[tr_idx], y[tr_idx])
+    yp = m.predict(X[te_idx])
+    acc.append(accuracy_score(y[te_idx], yp))
+    prec.append(precision_score(y[te_idx], yp, zero_division=0))
+    rec.append(recall_score(y[te_idx], yp, zero_division=0))
+    f1s.append(f1_score(y[te_idx], yp, zero_division=0))
+
+log.info("  ── CV Results (mean ± std) ───────────────────────────")
+for name, scores in [("accuracy", acc), ("precision", prec), ("recall", rec), ("f1", f1s)]:
+    log.info(f"    {name:<12}: {np.mean(scores):.4f} ± {np.std(scores):.4f}  folds={[round(s,3) for s in scores]}")
+
+log.info("  ── Feature Importance Top 15 ─────────────────────────")
+pairs = sorted(zip(FEATURE_COLS, rf.model.feature_importances_), key=lambda x: -x[1])
+for feat, imp in pairs[:15]:
     bar = "█" * int(imp * 40)
-    log.info(f"    {feat:<22} {imp:.4f}  {bar}")
+    log.info(f"    {feat:<30} {imp:.4f}  {bar}")
 
 # ── 5. OneClass SVM ──────────────────────────────────────────────────────────
 log.info("Treinando OneClassSVM (somente dados normais)...")
@@ -119,6 +122,5 @@ log.info(f"  feature_cols.pkl salvo com {len(FEATURE_COLS)} features")
 
 log.info("═" * 55)
 log.info(f"Modelos salvos em {MODELS_DIR}/")
-log.info("Próximos passos:")
-log.info("  git add models/ && git commit -m 'feat: add trained RF + OCC SVM models' && git push")
+log.info("  git add -f models/ && git commit && git push")
 log.info("═" * 55)

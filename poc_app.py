@@ -497,22 +497,15 @@ def api_predict(dispositivo_id):
 
         if _modelos["rf"] is not None:
             try:
-                feature_cols = [
-                    "temp_media", "temp_maxima", "temp_minima", "temp_amplitude",
-                    "temp_volatilidade", "temp_tendencia",
-                ]
-                mapped = {
-                    "temp_media": raw_features.get("temp_mean", 0),
-                    "temp_maxima": raw_features.get("temp_max", 0),
-                    "temp_minima": raw_features.get("temp_min", 0),
-                    "temp_amplitude": raw_features.get("temp_amplitude", 0),
-                    "temp_volatilidade": raw_features.get("temp_std", 0),
-                    "temp_tendencia": raw_features.get("temp_tendencia", 0),
-                }
-                row = [mapped[c] for c in feature_cols]
-                X = np.array(row).reshape(1, -1)
-                proba = float(_modelos["rf"].predict_proba(X)[0])
-                result["risk_score"] = round(proba, 4)
+                _ocsvm = _modelos.get("ocsvm")
+                feat_keys = _ocsvm.feature_cols if _ocsvm is not None and _ocsvm.feature_cols else None
+                if feat_keys:
+                    row = [raw_features.get(c, 0.0) for c in feat_keys]
+                    X = np.nan_to_num(np.array(row, dtype=float).reshape(1, -1), nan=0.0)
+                    proba = float(_modelos["rf"].predict_proba(X)[0])
+                    result["risk_score"] = round(proba, 4)
+                else:
+                    result["risk_score"] = None
             except Exception:
                 result["risk_score"] = None
         else:
@@ -761,10 +754,12 @@ def api_dashboard_modelo():
             try:
                 clf = rf.model if hasattr(rf, "model") else rf
                 importances = clf.feature_importances_.tolist()
-                feature_cols = [
-                    "temp_media", "temp_maxima", "temp_minima",
-                    "temp_amplitude", "temp_volatilidade", "temp_tendencia",
-                ]
+                _ocsvm_local = _modelos.get("ocsvm")
+                feature_cols = (
+                    _ocsvm_local.feature_cols
+                    if _ocsvm_local is not None and _ocsvm_local.feature_cols
+                    else [f"feat_{i}" for i in range(len(importances))]
+                )
                 feature_importance = sorted(
                     [{"feature": f, "importancia": round(v, 4)} for f, v in zip(feature_cols, importances)],
                     key=lambda x: -x["importancia"],
