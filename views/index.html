@@ -93,6 +93,15 @@
       </div>
       {% endfor %}
     </div>
+    <script>
+      let _reloadT = 12;
+      const _reloadMsg = document.querySelector('.alert-inline');
+      const _iv = setInterval(() => {
+        _reloadT--;
+        if (_reloadMsg) _reloadMsg.querySelector('strong').textContent = `A recarregar em ${_reloadT}s…`;
+        if (_reloadT <= 0) { clearInterval(_iv); location.reload(); }
+      }, 1000);
+    </script>
     {% endif %}
 
     <!-- ── KPI Cards ─────────────────────────────────────────── -->
