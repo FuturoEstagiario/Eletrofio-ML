@@ -204,19 +204,49 @@ function populateLojaFilter(data) {
   });
 }
 
+function buildRiscoExecItems(data) {
+  const items = [];
+  const semTrat = data.filter(d => d.sem_tratativa).length;
+  const critHigh = data.filter(d => d.criticidade === 'C' || d.criticidade === 'A').length;
+  const pct = data.length > 0 ? Math.round(critHigh / data.length * 100) : 0;
+  const scores = data.map(d => d.risk_score).filter(s => s != null);
+  const avgScore = scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length * 100) : null;
+
+  if (semTrat > 0)
+    items.push({ level: 'danger', icon: 'bi-exclamation-circle-fill',
+      text: `${semTrat} alarme(s) sem tratativa — equipa técnica não registou resposta` });
+  if (pct > 30)
+    items.push({ level: 'danger', icon: 'bi-shield-exclamation',
+      text: `${pct}% da frota em nível Crítico ou Alto — plano de intervenção sistémica necessário` });
+  else if (pct > 10)
+    items.push({ level: 'warning', icon: 'bi-shield-exclamation',
+      text: `${pct}% da frota em nível Crítico ou Alto — monitorar de perto` });
+  if (avgScore !== null && avgScore > 60)
+    items.push({ level: 'warning', icon: 'bi-graph-up-arrow',
+      text: `Score ML médio: ${avgScore}% — degradação detectada na maioria da frota` });
+  if (!items.length)
+    items.push({ level: 'ok', icon: 'bi-shield-check',
+      text: 'Frota dentro dos parâmetros normais — sem alertas críticos ativos' });
+  return items;
+}
+
 function updateKPIs(data) {
   document.getElementById('kpi-total').textContent = data.length;
 
   const critHigh = data.filter(d => d.criticidade === 'C' || d.criticidade === 'A').length;
   const pct = data.length > 0 ? Math.round(critHigh / data.length * 100) : 0;
-  document.getElementById('kpi-crit-pct').textContent = pct + '%';
+  document.getElementById('kpi-crit-pct').innerHTML =
+    `${pct}%<div class="metric-context ${pct > 30 ? 'ctx-danger' : pct > 10 ? 'ctx-warning' : 'ctx-ok'}">${pct > 30 ? 'crítico — intervenção sistémica' : pct > 10 ? 'atenção necessária' : 'dentro do normal'}</div>`;
 
   const semTrat = data.filter(d => d.sem_tratativa).length;
-  document.getElementById('kpi-sem-trat').textContent = semTrat;
+  document.getElementById('kpi-sem-trat').innerHTML =
+    `${semTrat}<div class="metric-context ${semTrat > 0 ? 'ctx-danger' : 'ctx-ok'}">${semTrat > 0 ? 'alarmes sem resposta' : 'todos atendidos'}</div>`;
 
   const scores = data.map(d => d.risk_score).filter(s => s !== null && s !== undefined);
   const avgScore = scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length * 100) : null;
-  document.getElementById('kpi-score-medio').textContent = avgScore !== null ? avgScore + '%' : '—';
+  document.getElementById('kpi-score-medio').innerHTML = avgScore !== null
+    ? `${avgScore}%<div class="metric-context ${avgScore > 60 ? 'ctx-danger' : avgScore > 40 ? 'ctx-warning' : 'ctx-ok'}">${avgScore > 60 ? 'alto risco sistémico' : avgScore > 40 ? 'risco moderado' : 'risco baixo'}</div>`
+    : '—';
 }
 
 async function loadData() {
@@ -229,6 +259,7 @@ async function loadData() {
     saveScoreHistory(allData);
     document.getElementById('risco-loading').style.display = 'none';
     updateKPIs(allData);
+    renderExecSummary('exec-risco', buildRiscoExecItems(allData));
     populateLojaFilter(allData);
     applyFilters();
     document.getElementById('risco-update').innerHTML = `<i class="bi bi-arrow-clockwise"></i> ${new Date().toLocaleTimeString('pt-BR')}`;

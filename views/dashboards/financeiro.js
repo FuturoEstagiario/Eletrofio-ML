@@ -251,13 +251,35 @@ function renderTable(devices) {
     </tr>`).join('');
 }
 
+function buildFinExecItems(d) {
+  const items = [];
+  if (d.devices_urgentes > 0)
+    items.push({ level: 'danger', icon: 'bi-exclamation-octagon-fill',
+      text: `${d.devices_urgentes} device(s) com intervenção urgente — exposição acumulada: ${BRL(d.total_exposicao_diaria)}/dia` });
+  if (d.economia_potencial_diaria > 0)
+    items.push({ level: 'warning', icon: 'bi-piggy-bank-fill',
+      text: `Intervindo nos casos urgentes hoje: economia estimada de ${BRL(d.economia_potencial_diaria)}/dia vs aguardar falha` });
+  if (d.roi_medio >= 10)
+    items.push({ level: 'ok', icon: 'bi-graph-up-arrow',
+      text: `ROI médio de ${fmtROI(d.roi_medio)} — manutenção preventiva tem retorno claro` });
+  if (!items.length)
+    items.push({ level: 'ok', icon: 'bi-shield-check',
+      text: 'Sem intervenções urgentes identificadas — frota em estado controlado' });
+  return items;
+}
+
 function populateKPIs(d) {
-  document.getElementById('kpi-exp-diaria').textContent  = BRL(d.total_exposicao_diaria);
+  document.getElementById('kpi-exp-diaria').innerHTML =
+    `${BRL(d.total_exposicao_diaria)}<div class="metric-context ${d.total_exposicao_diaria > 50000 ? 'ctx-danger' : d.total_exposicao_diaria > 15000 ? 'ctx-warning' : 'ctx-ok'}">${d.total_exposicao_diaria > 50000 ? 'exposição elevada' : d.total_exposicao_diaria > 15000 ? 'atenção recomendada' : 'exposição controlada'}</div>`;
   document.getElementById('kpi-exp-semanal').textContent = BRL(d.total_exposicao_semanal);
-  document.getElementById('kpi-urgentes').textContent    = d.devices_urgentes;
-  document.getElementById('kpi-economia').textContent    = BRL(d.economia_potencial_diaria);
-  document.getElementById('kpi-investimento').textContent = BRL(d.custo_total_intervencao);
-  document.getElementById('kpi-roi-medio').textContent   = fmtROI(d.roi_medio);
+  document.getElementById('kpi-urgentes').innerHTML =
+    `${d.devices_urgentes}<div class="metric-context ${d.devices_urgentes > 0 ? 'ctx-danger' : 'ctx-ok'}">${d.devices_urgentes > 0 ? 'requer ação imediata' : 'sem urgências'}</div>`;
+  document.getElementById('kpi-economia').innerHTML =
+    `${BRL(d.economia_potencial_diaria)}<div class="metric-context ctx-ok">economia potencial/dia</div>`;
+  document.getElementById('kpi-investimento').innerHTML =
+    `${BRL(d.custo_total_intervencao)}<div class="metric-context ctx-muted">custo total de visitas</div>`;
+  document.getElementById('kpi-roi-medio').innerHTML =
+    `${fmtROI(d.roi_medio)}<div class="metric-context ${d.roi_medio >= 10 ? 'ctx-ok' : d.roi_medio >= 3 ? 'ctx-warning' : 'ctx-muted'}">${d.roi_medio >= 10 ? 'retorno excelente' : d.roi_medio >= 3 ? 'retorno moderado' : 'retorno baixo'}</div>`;
 }
 
 function renderAssumpcoes(assumpcoes) {
@@ -313,6 +335,7 @@ async function loadFinanceiro() {
     buildScatterChart(_allDevices);
     renderTable(_allDevices);
     renderAssumpcoes(d.assumpcoes || {});
+    renderExecSummary('exec-fin', buildFinExecItems(d));
 
     const upd = document.getElementById('fin-update');
     upd.style.display = 'inline-flex';

@@ -242,5 +242,27 @@ fetch('/api/health').then(r => r.json()).then(d => {
 });
 </script>
 {% block extra_scripts %}{% endblock %}
+<script>
+function initTooltips() {
+  document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el =>
+    bootstrap.Tooltip.getOrCreateInstance(el, { trigger: 'hover', delay: { show: 220, hide: 0 } })
+  );
+}
+
+function renderExecSummary(containerId, items) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  if (!items || !items.length) { el.innerHTML = ''; return; }
+  el.innerHTML = `<div class="exec-summary">
+    <div class="exec-summary-title"><i class="bi bi-lightning-fill"></i>O que fazer agora</div>
+    ${items.map(it => `<div class="exec-summary-item exec-item-${it.level}">
+      <i class="bi ${it.icon}"></i><span>${it.text}</span>
+    </div>`).join('')}
+  </div>`;
+  initTooltips();
+}
+
+document.addEventListener('DOMContentLoaded', initTooltips);
+</script>
 </body>
 </html>

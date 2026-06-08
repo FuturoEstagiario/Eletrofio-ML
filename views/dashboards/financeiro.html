@@ -20,34 +20,48 @@
   <p>Quantifica o <strong>risco financeiro real</strong> de cada compressor: multiplica o score ML pela taxa de custo de parada da sua criticidade, extrapolando para 24h. O <strong>ROI</strong> compara a exposição diária ao custo fixo de R$&nbsp;450 de uma intervenção preventiva — quando positivo, intervir hoje é sempre mais barato do que aguardar a falha.</p>
 </div>
 
+<div id="exec-fin" class="anim-fade-in-up" style="animation-delay:.04s"></div>
+
 <!-- KPIs -->
 <div class="metric-grid anim-fade-in-up" id="fin-kpis" style="animation-delay:.05s">
-  <div class="metric-card">
+  <div class="metric-card"
+       data-bs-toggle="tooltip" data-bs-placement="bottom"
+       title="Soma de (Score ML × custo de criticidade × 24h) de todos os devices monitorados">
     <div class="metric-icon" style="background:rgba(239,68,68,.12);color:#ef4444"><i class="bi bi-currency-dollar"></i></div>
     <div class="metric-value" id="kpi-exp-diaria" style="color:#ef4444;font-size:1rem">—</div>
     <div class="metric-label">Exposição Diária Total</div>
   </div>
-  <div class="metric-card">
+  <div class="metric-card"
+       data-bs-toggle="tooltip" data-bs-placement="bottom"
+       title="Projeção de 7 dias da exposição diária total (exposicao_diaria × 7)">
     <div class="metric-icon" style="background:rgba(249,115,22,.12);color:#f97316"><i class="bi bi-calendar-week"></i></div>
     <div class="metric-value" id="kpi-exp-semanal" style="font-size:1rem">—</div>
     <div class="metric-label">Exposição Semanal</div>
   </div>
-  <div class="metric-card">
+  <div class="metric-card"
+       data-bs-toggle="tooltip" data-bs-placement="bottom"
+       title="Devices com ROI ≥ 50× — o custo de parada diário supera 50 vezes o valor de uma intervenção preventiva (R$ 450)">
     <div class="metric-icon metric-icon-danger"><i class="bi bi-exclamation-octagon-fill"></i></div>
     <div class="metric-value" id="kpi-urgentes">—</div>
     <div class="metric-label">Intervenções Urgentes</div>
   </div>
-  <div class="metric-card">
+  <div class="metric-card"
+       data-bs-toggle="tooltip" data-bs-placement="bottom"
+       title="Poupança estimada se todos os devices Urgente e Recomendado forem tratados hoje (exposicao_diaria − R$ 450 por device)">
     <div class="metric-icon" style="background:rgba(34,197,94,.1);color:#4ade80"><i class="bi bi-piggy-bank-fill"></i></div>
     <div class="metric-value" id="kpi-economia" style="color:#4ade80;font-size:1rem">—</div>
     <div class="metric-label">Economia Potencial/dia</div>
   </div>
-  <div class="metric-card">
+  <div class="metric-card"
+       data-bs-toggle="tooltip" data-bs-placement="bottom"
+       title="Custo total estimado: nº de devices Urgente + Recomendado × R$ 450 por visita técnica">
     <div class="metric-icon" style="background:rgba(168,149,110,.12);color:var(--beige)"><i class="bi bi-tools"></i></div>
     <div class="metric-value" id="kpi-investimento" style="font-size:1rem">—</div>
     <div class="metric-label">Invest. Recomendado</div>
   </div>
-  <div class="metric-card">
+  <div class="metric-card"
+       data-bs-toggle="tooltip" data-bs-placement="bottom"
+       title="Quantas vezes a intervenção (R$ 450) se paga em 1 dia, em média: exposicao_diaria ÷ 450">
     <div class="metric-icon metric-icon-accent"><i class="bi bi-graph-up-arrow"></i></div>
     <div class="metric-value" id="kpi-roi-medio">—</div>
     <div class="metric-label">ROI Médio (×)</div>

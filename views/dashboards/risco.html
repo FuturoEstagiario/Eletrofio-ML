@@ -20,23 +20,33 @@
   <p>Cada linha representa um compressor monitorado em tempo real. O <strong>score composto</strong> combina a predição do modelo ML (×40%), a criticidade do equipamento (×25%), o percentual de degelo (×20%) e o erro de setpoint (×15%). A <strong>barra de tendência</strong> compara o score atual com o histórico das últimas 8 leituras — vermelho indica agravamento, verde indica melhora.</p>
 </div>
 
+<div id="exec-risco" class="anim-fade-in-up" style="animation-delay:.04s"></div>
+
 <div class="metric-grid anim-fade-in-up" id="risco-kpis" style="animation-delay:.05s">
-  <div class="metric-card">
+  <div class="metric-card"
+       data-bs-toggle="tooltip" data-bs-placement="bottom"
+       title="Compressores com dados simultâneos em alarmes.parquet e tele_features.parquet">
     <div class="metric-icon metric-icon-accent"><i class="bi bi-cpu"></i></div>
     <div class="metric-value" id="kpi-total">—</div>
     <div class="metric-label">Devices monitorados</div>
   </div>
-  <div class="metric-card">
+  <div class="metric-card"
+       data-bs-toggle="tooltip" data-bs-placement="bottom"
+       title="% de devices com criticidade C (Crítica) ou A (Alta) — preocupante se > 30% da frota">
     <div class="metric-icon metric-icon-danger"><i class="bi bi-exclamation-triangle-fill"></i></div>
     <div class="metric-value" id="kpi-crit-pct">—</div>
     <div class="metric-label">Crítico + Alto</div>
   </div>
-  <div class="metric-card">
+  <div class="metric-card"
+       data-bs-toggle="tooltip" data-bs-placement="bottom"
+       title="Alarmes sem registo de resposta técnica (eventoDhCad vazio) — idealmente = 0">
     <div class="metric-icon metric-icon-warning"><i class="bi bi-hourglass-split"></i></div>
     <div class="metric-value" id="kpi-sem-trat">—</div>
     <div class="metric-label">Sem tratativa</div>
   </div>
-  <div class="metric-card">
+  <div class="metric-card"
+       data-bs-toggle="tooltip" data-bs-placement="bottom"
+       title="Média do score OCC SVM de todos os devices × 100% — saudável abaixo de 40%">
     <div class="metric-icon metric-icon-info"><i class="bi bi-graph-up"></i></div>
     <div class="metric-value" id="kpi-score-medio">—</div>
     <div class="metric-label">Score ML médio</div>

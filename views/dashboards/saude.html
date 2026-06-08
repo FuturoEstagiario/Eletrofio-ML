@@ -20,35 +20,46 @@
   <p>Panorama executivo de toda a frota monitorada: distribuição de criticidade, score médio de risco e concentração de problemas por loja. O <strong>top-10</strong> lista os compressores com maior score ML — são os candidatos imediatos a intervenção preventiva para evitar paradas não planeadas.</p>
 </div>
 
+<div id="exec-saude" class="anim-fade-in-up" style="animation-delay:.04s"></div>
+
 <div class="metric-grid anim-fade-in-up" style="animation-delay:.05s">
-  <div class="metric-card kpi-total">
+  <div class="metric-card kpi-total"
+       data-bs-toggle="tooltip" data-bs-placement="bottom"
+       title="Compressores com dados simultâneos em alarmes.parquet e tele_features.parquet">
     <div class="metric-icon metric-icon-accent"><i class="bi bi-cpu"></i></div>
     <div class="metric-value" id="kpi-total">—</div>
     <div class="metric-label">Total Devices</div>
   </div>
-  <div class="metric-card">
+  <div class="metric-card"
+       data-bs-toggle="tooltip" data-bs-placement="bottom"
+       title="Devices com alarme de nível C (Crítico) ativo — requerem ação em menos de 24h">
     <div class="metric-icon metric-icon-danger"><i class="bi bi-exclamation-octagon-fill"></i></div>
     <div class="metric-value" id="kpi-critico">—</div>
     <div class="metric-label">Críticos</div>
     <div class="metric-sub" id="kpi-critico-pct">—</div>
   </div>
-  <div class="metric-card">
+  <div class="metric-card"
+       data-bs-toggle="tooltip" data-bs-placement="bottom"
+       title="Devices com alarme A (Alta) ou M (Média) — monitorar de perto e planear intervenção esta semana">
     <div class="metric-icon metric-icon-warning"><i class="bi bi-exclamation-triangle-fill"></i></div>
     <div class="metric-value" id="kpi-atencao">—</div>
     <div class="metric-label">Atenção (A+M)</div>
     <div class="metric-sub" id="kpi-atencao-pct">—</div>
   </div>
-  <div class="metric-card">
+  <div class="metric-card"
+       data-bs-toggle="tooltip" data-bs-placement="bottom"
+       title="Devices com alarme B (Baixo) ou I (Info) — operação dentro do esperado, sem urgência">
     <div class="metric-icon metric-icon-success"><i class="bi bi-shield-check"></i></div>
     <div class="metric-value" id="kpi-normal">—</div>
     <div class="metric-label">Normal (B+I)</div>
     <div class="metric-sub" id="kpi-normal-pct">—</div>
   </div>
-  <div class="metric-card">
+  <div class="metric-card"
+       data-bs-toggle="tooltip" data-bs-placement="bottom"
+       title="Média do score OCC SVM de todos os devices × 100% — frota saudável fica abaixo de 40%">
     <div class="metric-icon metric-icon-beige"><i class="bi bi-graph-up-arrow"></i></div>
     <div class="metric-value" id="kpi-score-medio">—</div>
     <div class="metric-label">Score ML Médio</div>
-    <div class="metric-sub">risco da frota</div>
   </div>
 </div>
 

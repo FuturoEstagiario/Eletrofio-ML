@@ -10,15 +10,37 @@ const CHART_DARK = {
 let donutChart = null;
 let lojasChart = null;
 
+function buildSaudeExecItems(d) {
+  const items = [];
+  if (d.n_critico > 0)
+    items.push({ level: 'danger', icon: 'bi-exclamation-octagon-fill',
+      text: `${d.n_critico} compressor(es) em nível Crítico — inspecionar em menos de 24h` });
+  if (d.pct_normal < 50)
+    items.push({ level: 'warning', icon: 'bi-heart-pulse-fill',
+      text: `Apenas ${d.pct_normal}% da frota em estado Normal — degradação acima do esperado` });
+  if (d.avg_score !== null && d.avg_score > 60)
+    items.push({ level: 'warning', icon: 'bi-graph-up-arrow',
+      text: `Score ML médio: ${d.avg_score}% — sinal de degradação generalizada (saudável < 40%)` });
+  if (!items.length)
+    items.push({ level: 'ok', icon: 'bi-shield-check',
+      text: `Frota em bom estado — ${d.pct_normal}% dos devices em operação normal` });
+  return items;
+}
+
 function updateKPIs(d) {
-  document.getElementById('kpi-total').textContent        = d.total;
-  document.getElementById('kpi-critico').textContent      = d.n_critico;
-  document.getElementById('kpi-critico-pct').textContent  = d.pct_critico + '% da frota';
-  document.getElementById('kpi-atencao').textContent      = d.n_atencao;
-  document.getElementById('kpi-atencao-pct').textContent  = d.pct_atencao + '% da frota';
-  document.getElementById('kpi-normal').textContent       = d.n_normal;
-  document.getElementById('kpi-normal-pct').textContent   = d.pct_normal + '% da frota';
-  document.getElementById('kpi-score-medio').textContent  = d.avg_score !== null ? d.avg_score + '%' : '—';
+  document.getElementById('kpi-total').textContent   = d.total;
+  document.getElementById('kpi-critico').textContent = d.n_critico;
+  document.getElementById('kpi-critico-pct').innerHTML =
+    `${d.pct_critico}% da frota<div class="metric-context ${d.n_critico > 0 ? 'ctx-danger' : 'ctx-ok'}">${d.n_critico > 0 ? 'ação imediata necessária' : 'sem críticos'}</div>`;
+  document.getElementById('kpi-atencao').textContent = d.n_atencao;
+  document.getElementById('kpi-atencao-pct').innerHTML =
+    `${d.pct_atencao}% da frota<div class="metric-context ${d.pct_atencao > 40 ? 'ctx-warning' : 'ctx-muted'}">${d.pct_atencao > 40 ? 'monitorar de perto' : 'dentro do esperado'}</div>`;
+  document.getElementById('kpi-normal').textContent = d.n_normal;
+  document.getElementById('kpi-normal-pct').innerHTML =
+    `${d.pct_normal}% da frota<div class="metric-context ${d.pct_normal >= 70 ? 'ctx-ok' : d.pct_normal >= 50 ? 'ctx-warning' : 'ctx-danger'}">${d.pct_normal >= 70 ? 'frota saudável' : d.pct_normal >= 50 ? 'atenção recomendada' : 'frota comprometida'}</div>`;
+  document.getElementById('kpi-score-medio').innerHTML = d.avg_score !== null
+    ? `${d.avg_score}%<div class="metric-context ${d.avg_score > 60 ? 'ctx-danger' : d.avg_score > 40 ? 'ctx-warning' : 'ctx-ok'}">${d.avg_score > 60 ? 'alto risco' : d.avg_score > 40 ? 'risco moderado' : 'risco baixo'}</div>`
+    : '—';
 }
 
 function buildDonut(porCrit) {
@@ -192,6 +214,7 @@ async function loadData() {
     const d = json.dados;
     document.getElementById('saude-loading').style.display = 'none';
     updateKPIs(d);
+    renderExecSummary('exec-saude', buildSaudeExecItems(d));
     buildDonut(d.por_crit);
     buildLojasChart(d.por_loja);
     renderTop10(d.top10);
