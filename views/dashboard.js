@@ -125,11 +125,12 @@
   }
 
   function preencherCelulasTelemetria(id, features) {
-    const fmt = (v) => v != null ? `${v}°C` : "—";
+    const fmt = (v) => (v != null && v !== 0) ? `${v}°C` : "—";
     const NA  = '<span class="text-muted">—</span>';
 
     document.querySelectorAll(`.tele-temp[data-id="${id}"]`).forEach((el) => {
       if (!features) { el.innerHTML = NA; return; }
+      if (features.temp_minima === 0 && features.temp_media === 0 && features.temp_maxima === 0) { el.innerHTML = NA; return; }
       const alta = features.temp_maxima > 30 ? " temp-alta" : "";
       const sep  = `<span class="text-muted" style="margin:0 3px">/</span>`;
       el.innerHTML =
