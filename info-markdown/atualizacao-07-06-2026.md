@@ -188,3 +188,47 @@ GET /api/monitoramento/reincidencia
 | API para integração RAG/WhatsApp | Pronta (25+ endpoints JSON públicos) |
 | Autenticação | Não implementada (PoC) |
 | Testes | Não implementados |
+
+---
+
+## 10. Melhorias de Legibilidade dos Dashboards
+
+**Ficheiros:** `views/dashboards/dashboards.css`, `views/dashboards/_base.html`, `financeiro.html/.js`, `risco.html/.js`, `saude.html/.js`
+
+Três camadas de melhoria aplicadas nos dashboards Financeiro, Risco e Saúde:
+
+### Card "O que fazer agora" (`exec-summary`)
+
+Cada dashboard gera dinamicamente um card de ação após carregar os dados.
+Função `renderExecSummary(containerId, items)` partilhada via `_base.html`.
+Lógica específica por dashboard:
+
+| Dashboard | Condições avaliadas |
+|---|---|
+| Financeiro | devices_urgentes > 0, economia_potencial > 0, roi_medio ≥ 10 |
+| Risco | alarmes sem tratativa, % críticos > 30% ou > 10%, score médio > 60% |
+| Saúde | n_critico > 0, pct_normal < 50%, avg_score > 60% |
+
+Itens coloridos: `exec-item-danger` (vermelho), `exec-item-warning` (amarelo), `exec-item-ok` (verde). Fallback verde quando nada crítico.
+
+### Tooltips Bootstrap nos KPI cards
+
+`data-bs-toggle="tooltip"` adicionado em todos os metric-cards dos 3 dashboards.
+Hover revela de onde vem cada número (fórmula, fonte de dados, limiar de alerta).
+Init partilhado via `initTooltips()` em `_base.html` — roda no `DOMContentLoaded`
+e re-roda após cada `renderExecSummary()` para cobrir elementos injectados dinamicamente.
+
+### Sub-labels contextuais (`.metric-context`)
+
+Cada KPI value passa a usar `.innerHTML` em vez de `.textContent`,
+injectando uma linha extra com classificação qualitativa colorida:
+
+| Classe | Cor | Exemplo de texto |
+|---|---|---|
+| `ctx-danger` | `#f87171` | "exposição elevada", "ação imediata necessária" |
+| `ctx-warning` | `#facc15` | "atenção recomendada", "monitorar de perto" |
+| `ctx-ok` | `#4ade80` | "exposição controlada", "frota saudável" |
+| `ctx-muted` | muted | "custo total de visitas" |
+
+Os limiares são calculados em runtime a partir dos dados reais
+(não hardcoded no HTML), garantindo que a classificação reflecte o estado actual da frota.
