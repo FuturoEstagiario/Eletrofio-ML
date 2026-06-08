@@ -1,7 +1,7 @@
 # Explicativo de Dashboards — EletroFrio ML
 
 Guia de referência para todos os painéis do sistema de monitoramento preditivo.  
-Cada secção explica o **propósito**, os **dados usados**, as **visualizações** e como **interpretar** o que aparece no ecrã.
+Cada secção explica o **propósito**, os **dados usados**, as **visualizações** e como **interpretar** o que aparece no ecrã, incluindo de onde vem cada valor mostrado.
 
 ---
 
@@ -61,6 +61,19 @@ A página de entrada do sistema. Funciona como um **painel executivo de alto ní
 - **Anomalia = Sim** → comportamento fora do padrão histórico, mesmo que não haja alarme crítico activo
 - **Sem Tratativa elevado** → equipa de campo não está a responder aos alertas, processo operacional a falhar
 
+### Origem dos dados e cálculo
+
+| Dado exibido | Fonte | Campo |
+|---|---|---|
+| Totais de alarmes por criticidade | `alarmes.parquet` (cache `alarmes_raw`) | campo `criticidade` de cada registo |
+| Nome da loja | `alarmes.parquet` | campo `lojaNm` |
+| "Sem Tratativa" | `alarmes.parquet` | `eventoDhCad is None` — campo de data de resposta vazio = sem atendimento |
+| risk_score na tabela | `tele_features.parquet` via OCC SVM | `sigmoid(decision_function(X))` com 36 features |
+| Anomalia (Sim/Não) | `tele_features.parquet` via OCC SVM | `predict_raw(X) == -1` |
+| Temperatura actual | `tele_features.parquet` | campo `temp_mean` (média do período) |
+
+**Como os KPI cards são calculados:** contagem simples dos registos em `alarmes_raw`. "Sem Tratativa" conta os registos onde o campo `eventoDhCad` (data de cadastro do evento de resposta ao alarme) está ausente. Os dados são servidos a partir do cache em memória carregado de `alarmes.parquet` — não há chamada à API externa em cada pedido de página.
+
 ---
 
 ## 2. Saúde da Frota
@@ -94,6 +107,22 @@ Visão **consolidada da frota inteira** num único painel. Enquanto a Visão Ger
 - **Loja com score alto mas zero críticos** → o modelo detectou degradação antes dos alarmes — boa candidata a visita preventiva
 - **Loja com vários críticos mas score baixo** → alarmes podem ser de configuração (setpoints errados) e não de falha mecânica real
 
+### Origem dos dados e cálculo
+
+Chama `saude_frota(alarmes_raw, tele_features, modelos)` em `src/dashboard_service.py`, que por sua vez chama `risco_tabela()` para obter a lista de devices com scores.
+
+| Indicador | Cálculo |
+|---|---|
+| n_critico | `count` de devices onde `criticidade == "C"` |
+| n_atencao | `count` de devices onde `criticidade in ["A", "M"]` |
+| n_normal | `count` de devices onde `criticidade in ["B", "I"]` |
+| % de cada grupo | `n / total × 100` |
+| Score ML Médio (%) | `média(risk_score) × 100` — risk_score vem do OCC SVM (ver Mapa de Risco) |
+| Score médio por loja | `média(risk_scores dos devices daquela loja) × 100` |
+| Devices críticos por loja | `count(criticidade == "C" por loja)` |
+
+**Quem aparece:** só devices que têm registo simultâneo em **ambos** `alarmes.parquet` (alarme activo) e `tele_features.parquet` (dados de telemetria). Devices sem telemetria não entram no score médio.
+
 ---
 
 ## 3. Mapa de Risco
@@ -104,22 +133,6 @@ Visão **consolidada da frota inteira** num único painel. Enquanto a Visão Ger
 ### O que é
 
 O painel mais analítico do sistema. Classifica **cada compressor individualmente** por um score composto que combina múltiplas fontes de risco, e estima tendência ao longo do tempo.
-
-### Fórmula do Score Composto
-
-```
-Score Final = RF_score     × 40%
-            + Criticidade  × 25%
-            + Degelo       × 20%
-            + Erro de Temp × 15%
-```
-
-| Componente | O que mede | Peso |
-|---|---|---|
-| RF_score | Probabilidade de falha (Random Forest) | 40% |
-| Criticidade | Nível do alarme activo (C=1.0, A=0.7, M=0.4, B=0.2, I=0.1) | 25% |
-| Degelo | % do tempo em ciclo de degelo (> 30% = anómalo) | 20% |
-| Erro de Temp | Desvio da temperatura média em relação ao setpoint | 15% |
 
 ### O que mostra
 
@@ -138,6 +151,30 @@ Score Final = RF_score     × 40%
 - **Score < 40% + sparkline descendente** → recuperação após manutenção (bom sinal)
 - **"Dias até falha" < 7** → abertura de chamado recomendada imediatamente
 - **Anomalia OCC SVM = Sim** mesmo com score moderado → comportamento atípico, investigar
+
+### Origem dos dados e cálculo
+
+**Fontes:** `alarmes.parquet` (criticidade, loja, nome do device) + `tele_features.parquet` (36 features de temperatura, degelo, pressão).
+
+**Como o risk_score é calculado** (código em `src/dashboard_service.py`, função `risco_tabela()`):
+
+Para cada device que aparece em ambas as fontes:
+
+**Passo 1 — tentativa com RF (falha silenciosamente):**  
+O código tenta usar 6 features hardcoded (`temp_mean`, `temp_max`, `temp_min`, `temp_amplitude`, `temp_std`, `temp_taxa_variacao_media`). Como o RF foi treinado com **36 features**, a chamada falha com erro de dimensão. O erro é capturado pelo `except Exception` e `risk_score` fica `None`.
+
+**Passo 2 — fallback: OCC SVM (36 features):**  
+Usa os 36 nomes armazenados em `feature_cols.pkl`. Para cada feature, lê `feats.get(c, 0.0)` do parquet. Aplica `decision_function(X)` (que escala internamente com o `scaler.pkl`) e converte com sigmoid:
+
+```
+risk_score = 1 / (1 + exp(−decision_score))
+```
+
+> **Nota sobre a interpretação do OCC SVM:** o `decision_function` retorna valores **positivos** para dados **dentro** do padrão normal e **negativos** para **anomalias**. Pelo sigmoid, isso resulta em `risk_score > 0.5` para comportamento normal e `risk_score < 0.5` para anomalias — o inverso do que seria intuitivo. O indicador correto de "anomalia detectada" é `predict_raw(X) == -1`, não o valor do risk_score em si.
+
+> **Sobre a fórmula composta** mostrada na interface (`RF×40% + Criticidade×25% + Degelo×20% + Erro Temp×15%`): é um modelo **conceitual** do que idealmente o score combinaria — **não está implementada no código actual**. O valor exibido é sempre o sigmoid do OCC SVM conforme descrito acima.
+
+**Sparklines e "dias até falha":** calculados a partir do histórico de scores em `scores_historico` no PostgreSQL (se disponível) ou do histórico em memória da sessão actual. A regressão linear é feita sobre os últimos N scores para projectar quando o score atingiria 1.0.
 
 ---
 
@@ -174,6 +211,26 @@ Análise detalhada da **série temporal de temperatura** de um compressor espec�
 - **Temperatura muito abaixo do setpoint** → sensor defeituoso ou problema de calibração
 - **Muitos marcadores de anomalia seguidos** → sequência de comportamento anómalo, risco real
 
+### Origem dos dados e cálculo
+
+**Fonte:** `tele_series.parquet` — séries temporais brutas por device (cada linha = um intervalo de 5 minutos).
+
+Chama `temperatura_series(dispositivo_id, tele_series)` em `src/dashboard_service.py`.
+
+| Elemento visual | Cálculo |
+|---|---|
+| Linha azul (temperatura real) | Array `temp` da série temporal do device |
+| Linha tracejada laranja (setpoint) | Array `setpoint`; se ausente, preenchido com `nanmean` do próprio array |
+| Banda de tolerância | `setpoint + 2` e `setpoint − 2` ponto a ponto sobre o array |
+| Marcadores de anomalia (pontos vermelhos) | Regra simples: `1 if temp[i] > setpoint[i] + 2 else 0` — sem ML |
+| % acima do setpoint | `mean(temp > setpoint) × 100` |
+| Temperatura média | `np.mean(temp_array)` |
+| Temperatura máxima | `np.max(temp_array)` |
+| Temperatura mínima | `np.min(temp_array)` |
+| Desvio padrão | `np.std(temp_array)` |
+
+**Importante:** os marcadores de anomalia neste dashboard são calculados por regra simples (temperatura acima da banda ±2°C), **não pelo modelo ML**. O OCC SVM só é invocado no endpoint `/api/monitoramento/scores/<id>` (análise individual de device).
+
 ---
 
 ## 5. Alarmes por Loja
@@ -203,6 +260,21 @@ Visão **geográfica/organizacional** dos alarmes — em vez de ver por device, 
 - **Loja com muitos alarmes mas todos de nível B/I** → pode ser configuração de setpoint, não falha mecânica
 - **Loja nova no topo do ranking** (não estava antes) → mudança repentina, investigar causa
 - **"Sem Tratativa" > 50% numa loja** → equipa local não está a tratar alarmes, problema de processo
+
+### Origem dos dados e cálculo
+
+**Fonte:** `alarmes.parquet` (cache `alarmes_raw`) — exclusivamente. Nenhum dado de telemetria ou ML é usado neste dashboard.
+
+Chama `alarmes_por_loja(alarmes_raw)` em `src/dashboard_service.py`. Percorre todos os registos e agrupa por campo `lojaNm`.
+
+| Coluna | Cálculo |
+|---|---|
+| Total | `count` de registos de alarme por loja |
+| C / A / M / B / I | `count` de registos com aquela `criticidade` dentro da loja |
+| Sem Tratativa | `count` de registos onde `eventoDhCad is None` |
+
+**Top 15 lojas:** ordenadas por total de alarmes decrescente, truncadas em 15.  
+**Gráfico de Pareto:** barras = contagem por loja (ordenada desc), linha = percentual acumulado sobre o total de alarmes.
 
 ---
 
@@ -236,6 +308,21 @@ Os compressores de refrigeração formam gelo no evaporador durante a operação
 - **Ciclos muito curtos e frequentes** → o sistema está a entrar e sair de degelo sem conseguir resolver o problema de gelo
 - **Device com 0% de degelo** → sensor não está a reportar eventos de degelo — possível falha de sensor ou configuração
 - **Degelo normalizado após manutenção** → evidência de que a intervenção resolveu o problema
+
+### Origem dos dados e cálculo
+
+**Fontes:** `tele_features.parquet` (features pré-calculadas por device) + `alarmes.parquet` (para nome e loja).
+
+Chama `degelo_analysis(tele_features, alarmes_raw)` em `src/dashboard_service.py`.
+
+| Campo exibido | Feature de origem | Como foi calculada |
+|---|---|---|
+| % de tempo em degelo | `degelo_fracao × 100` | Fracção dos intervalos de 5 min com status de degelo activo |
+| Nº de ciclos | `degelo_num_ciclos` | Contagem de transições ligado→desligado no campo de degelo |
+| Duração média (min) | `degelo_duracao_media × 5` | Média de intervalos por ciclo; ×5 porque cada intervalo = 5 minutos |
+| Alerta (destaque vermelho) | `degelo_fracao > 0.30` | Threshold fixo de 30% |
+
+**Origem das features:** `degelo_fracao`, `degelo_num_ciclos` e `degelo_duracao_media` são calculadas em `src/features.py` (função `processar_dispositivo`) sobre a série temporal bruta, e persistidas em `tele_features.parquet` pelo script `scripts/coletar_tele.py`. Não são calculadas em tempo real pelo dashboard.
 
 ---
 
@@ -272,6 +359,21 @@ A **razão de pressão** (condensação / sucção) indica a eficiência do comp
 - **Pressão de condensação muito alta** → condensador sujo, ventilação insuficiente ou excesso de refrigerante
 - **Razão de pressão < 2** ou **> 6** → eficiência do compressor comprometida
 - **Pressão de sucção negativa (vácuo)** → fuga grave, compressor aspirando ar (perigoso para o sistema)
+
+### Origem dos dados e cálculo
+
+**Lista de devices** — `pressao_devices(tele_features)` em `src/dashboard_service.py`:
+
+| Campo | Feature de origem | Cálculo |
+|---|---|---|
+| Pressão de sucção (bar) | `pressao_succao_mean` | Média da série temporal de sucção, calculada em `src/features.py` |
+| Pressão de condensação (bar) | `pressao_cond_mean` | Média da série temporal de condensação |
+| Razão de pressão | — | `pressao_cond_mean / pressao_succao_mean` calculado on-the-fly |
+| Superaquecimento (°C) | `superaquecimento_mean` | Média do diferencial Tcondensação − Tsaturação |
+
+**Série temporal** — `pressao_series(dispositivo_id, tele_series)`: lê arrays `pressao_succao`, `pressao_cond`, `superaquecimento` e `labels` directamente de `tele_series.parquet` para o device seleccionado.
+
+**Nota:** se `pressao_succao_mean` for `None` para um device (sensor não presente ou não reportado pela API), o device **não aparece** na lista de pressão. Este dashboard só mostra devices com sensores de pressão activos.
 
 ---
 
@@ -312,6 +414,24 @@ Gestão do **histórico de chamados técnicos** abertos pelo sistema (automatica
 - **Picos em horários específicos** → correlacionar com eventos operacionais (recepção de mercadoria, abertura de loja, etc.)
 - **Mesmo device com chamados repetidos** → reincidência, possível causa raiz não resolvida (ver dashboard Mapa de Risco / endpoint reincidência)
 
+### Origem dos dados e cálculo
+
+**Fonte primária:** PostgreSQL (tabela `chamados`) — persistência total entre sessões e redeploys.  
+**Fallback:** `_cache["chamados_log"]` em memória — perdido ao reiniciar a aplicação.
+
+Campos armazenados por chamado: `dispositivo_id`, `dispositivo_nome`, `loja`, `motivo` (texto gerado pelo OCC SVM via `gerar_motivo()` ou preenchido manualmente), `status` ("aberto"/"fechado"), `timestamp`.
+
+| KPI | Cálculo |
+|---|---|
+| Total | `COUNT(*)` na tabela `chamados` |
+| Hoje | `COUNT(*) WHERE DATE(timestamp) = CURRENT_DATE` |
+| Abertos | `COUNT(*) WHERE status = 'aberto'` |
+| Resolvidos | `COUNT(*) WHERE status = 'fechado'` |
+
+**Gráfico por hora:** `EXTRACT(HOUR FROM timestamp)` agrupado, contando chamados por hora do dia (0–23).
+
+**Abertura automática:** o scheduler de 6h invoca `avaliar_e_abrir_chamados()` (em `src/dev/chamado_service.py`), que abre chamados para devices com `risk_score` acima do threshold configurado. O `motivo` é gerado por `OneClassSVMModel.gerar_motivo()` baseado nos valores das features de temperatura e degelo do device.
+
 ---
 
 ## 9. Impacto Financeiro
@@ -322,16 +442,6 @@ Gestão do **histórico de chamados técnicos** abertos pelo sistema (automatica
 ### O que é
 
 Estimativa do **impacto económico** dos problemas detectados. Traduz os dados técnicos em linguagem de negócio: quanto custa (ou pode custar) cada falha em termos de energia, mercadoria comprometida e tempo de paragem.
-
-### Metodologia de cálculo
-
-O impacto é estimado combinando:
-
-1. **Score de risco × tarifa de energia:** compressores com risco elevado tendem a consumir mais energia por trabalhar fora do ponto óptimo
-2. **Criticidade × custo estimado de downtime:** alarmes críticos são associados a probabilidade de paragem × valor médio de mercadoria perecível por loja
-3. **Tempo de degelo excessivo × eficiência perdida:** % de degelo acima do normal × tarifa de energia × horas do período
-
-> **Nota:** os valores são estimativas baseadas em modelos de referência do sector. Não são facturação real — servem para priorização relativa entre lojas.
 
 ### O que mostra
 
@@ -349,6 +459,88 @@ O impacto é estimado combinando:
 - **Loja no topo do ranking financeiro + muitos críticos** → caso de negócio claro para intervenção preventiva imediata
 - **Loja com impacto alto mas sem alarmes críticos** → o modelo ML está a detectar degradação silenciosa com custo energético elevado
 - **Impacto total da frota a crescer semana a semana** → degradação sistémica sem manutenção adequada
+
+### Origem dos dados e cálculo
+
+Os valores financeiros **não provêm de nenhum sistema contábil ou ERP da Eletrofrio**. São estimativas calculadas a partir de constantes hardcoded no código combinadas com o `risk_score` do modelo ML.
+
+**Fonte dos dados:** `alarmes.parquet` + `tele_features.parquet`, processados primeiro por `risco_tabela()` (obtém criticidade e risk_score por device) e depois por `financeiro_impacto()` em `src/dashboard_service.py`.
+
+---
+
+#### Constantes hardcoded (linhas 338–339 de `src/dashboard_service.py`)
+
+| Constante | Valor | Representa |
+|---|---|---|
+| `CUSTO_HORA["C"]` | R$ 3.500/h | Estimativa de custo de downtime para alarme Crítico |
+| `CUSTO_HORA["A"]` | R$ 1.500/h | Estimativa para alarme de Alta prioridade |
+| `CUSTO_HORA["M"]` | R$ 800/h | Estimativa para alarme Médio |
+| `CUSTO_HORA["B"]` | R$ 300/h | Estimativa para alarme Baixo |
+| `CUSTO_HORA["I"]` | R$ 80/h | Estimativa para alarme Informativo |
+| `CUSTO_INTERVENCAO` | R$ 450 | Custo fixo estimado de um chamado técnico |
+
+Estes valores são **estimativas de referência do setor de refrigeração comercial** — representam o custo médio estimado de perda de mercadoria perecível, energia desperdiçada e paragem operacional por hora de compressor em falha, por nível de criticidade. **Podem e devem ser ajustados no código** para reflectir os valores reais da Eletrofrio.
+
+---
+
+#### Fórmulas aplicadas por device
+
+```
+risk_score        → sigmoid do OCC SVM, valor entre 0.0 e 1.0
+custo_hora        → CUSTO_HORA[criticidade]   (tabela acima)
+
+exposicao_hora    = custo_hora × risk_score            (R$/h)
+exposicao_diaria  = exposicao_hora × 24               (R$/dia)
+exposicao_semanal = exposicao_diaria × 7              (R$/semana)
+roi               = exposicao_diaria / 450             (vezes que a intervenção se paga)
+economia_diaria   = exposicao_diaria − 450             (ganho líquido ao intervir hoje)
+```
+
+**Lógica:** o `risk_score` funciona como um **factor de probabilidade**. Um device com criticidade A (R$ 1.500/h de custo de downtime) mas risk_score 0.20 contribui apenas com R$ 300/h de exposição. Um device com criticidade M (R$ 800/h) mas risk_score 0.95 contribui com R$ 760/h — mais do que o anterior, apesar da criticidade menor.
+
+---
+
+#### Exemplo concreto
+
+**Device com criticidade "A" e `risk_score = 0.80`:**
+```
+exposicao_hora    = 1.500 × 0.80 = R$ 1.200/h
+exposicao_diaria  = 1.200 × 24  = R$ 28.800/dia
+roi               = 28.800 / 450 = 64×   → categoria "Urgente" (roi ≥ 50)
+economia_diaria   = 28.800 − 450 = R$ 28.350  (ganho líquido se intervir hoje)
+```
+
+**Device com criticidade "M" e `risk_score = 0.30`:**
+```
+exposicao_hora    = 800 × 0.30 = R$ 240/h
+exposicao_diaria  = 240 × 24  = R$ 5.760/dia
+roi               = 5.760 / 450 = 12.8×  → categoria "Recomendado" (10 ≤ roi < 50)
+economia_diaria   = 5.760 − 450 = R$ 5.310
+```
+
+---
+
+#### Categorias de recomendação
+
+| roi calculado | Categoria | Significado |
+|---|---|---|
+| ≥ 50 | Urgente | A intervenção (R$450) paga-se 50× por dia — intervir imediatamente |
+| ≥ 10 | Recomendado | Intervenção com retorno claro — agendar com prioridade |
+| ≥ 2 | Monitorar | Retorno positivo mas baixo — monitorar de perto |
+| < 2 | Normal | Custo de intervenção não justificado pelos dados actuais |
+
+---
+
+#### Totais da frota
+
+| KPI exibido | Cálculo |
+|---|---|
+| Exposição diária total (R$) | Soma de `exposicao_diaria` de todos os devices |
+| Exposição semanal total (R$) | `exposicao_diaria_total × 7` |
+| Economia potencial diária (R$) | Soma das `economia_diaria > 0` dos devices "Urgente" e "Recomendado" |
+| Custo total de intervenção (R$) | `count(Urgente + Recomendado) × 450` |
+| ROI médio da frota | Média dos `roi` de todos os devices com `roi > 0` |
+| Ranking por loja | Soma das `exposicao_diaria` dos devices agrupados por loja, ordem decrescente |
 
 ---
 
@@ -410,6 +602,35 @@ Painel de **transparência e auditoria do ML**. Expõe as métricas de qualidade
 - Após campanha de feedback intensiva dos técnicos (muitos labels novos em `feedback.parquet`)
 
 O re-treino pode ser disparado manualmente via `POST /api/admin/treinar` ou ocorre automaticamente quando novos devices são detectados pelo scheduler de 6 horas.
+
+### Origem dos dados e cálculo
+
+**Feature Importance:**
+
+| Dado | Origem | Cálculo |
+|---|---|---|
+| Importâncias | `rf.model.feature_importances_` | Atributo do `RandomForestClassifier` — Gini impurity reduction média |
+| Nomes das features | `ocsvm.feature_cols` (de `feature_cols.pkl`) | Lista dos 36 nomes em ordem; se ausente, mostra "feat_0", "feat_1", etc. |
+| Top 15 | — | Ordenado por importância desc, truncado em 15 |
+
+**Metadados do Random Forest:**
+- `n_estimators = 200` — fixo no código de treino (`busca_hiperpar=False`)
+- `n_features_in_ = 36` — lido do modelo carregado
+- Métricas (accuracy, precision, recall, F1): calculadas durante o treino em `scripts/treinar_modelos.py` via Stratified 5-Fold CV — **não são recalculadas em tempo real** pelo dashboard, são estáticas do momento do treino
+
+**Dados do treino actual:**
+- 25 devices totais (de `tele_features.parquet`)
+- Labels: criticidade C ou A → `anomalo=1` (18 devices); M, B ou I → `anomalo=0` (7 devices)
+- 36 features seleccionadas automaticamente por variância > 1e-6 (excluiu `onoff_duracao_media` e `onoff_num_ciclos` com variância ≈ 0)
+
+**Metadados do OCC SVM:**
+- `kernel = "rbf"`, `nu = 0.05` (taxa máxima esperada de falsos positivos)
+- `n_support_` = número de support vectors (pontos na fronteira de decisão aprendida)
+- Treinado **apenas** com as 7 amostras normais (criticidade M/B/I)
+
+**Distribuição de scores:**
+- Lê `_cache["tele_features"]` — campo `risk_score` por device (calculado no batch scoring do scheduler)
+- Agrupa em: Baixo (`risk_score < 0.40`), Médio (`0.40 ≤ risk_score < 0.70`), Alto (`risk_score ≥ 0.70`)
 
 ---
 
