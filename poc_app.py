@@ -46,7 +46,7 @@ from src.config import SERIES_MAP
 from src.dashboard_service import (
     risco_tabela, temperatura_series, alarmes_por_loja,
     degelo_analysis, pressao_devices, pressao_series,
-    saude_frota, financeiro_impacto,
+    saude_frota,
 )
 
 # ── Carregamento de modelos (tolerante a falhas) ──────────────────────────
@@ -885,20 +885,6 @@ def api_resolver_chamado(chamado_id):
         if ok:
             return jsonify({"status": "ok", "chamado_id": chamado_id})
         return jsonify({"status": "erro", "mensagem": "Chamado não encontrado ou já fechado"}), 404
-    except Exception as e:
-        return jsonify({"status": "erro", "mensagem": str(e)}), 500
-
-
-@app.route("/dashboards/financeiro")
-def dashboard_financeiro():
-    return render_template("dashboards/financeiro.html", active_page="financeiro")
-
-
-@app.route("/api/dashboard/financeiro")
-def api_dashboard_financeiro():
-    try:
-        dados = financeiro_impacto(_cache["alarmes_raw"], _cache["tele_features"], _modelos)
-        return jsonify({"status": "ok", "dados": dados})
     except Exception as e:
         return jsonify({"status": "erro", "mensagem": str(e)}), 500
 
