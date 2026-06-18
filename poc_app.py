@@ -279,8 +279,20 @@ def _fetch_background():
         time.sleep(CACHE_TTL)
 
 
-_bg = threading.Thread(target=_fetch_background, daemon=True)
-_bg.start()
+_bg_lock = threading.Lock()
+_bg_started = False
+
+
+@app.before_request
+def _ensure_bg_thread():
+    global _bg_started
+    if _bg_started:
+        return
+    with _bg_lock:
+        if not _bg_started:
+            _bg_started = True
+            threading.Thread(target=_fetch_background, daemon=True).start()
+            log.info("Background refresh iniciado no worker")
 
 
 # ── Pipeline: colecta agendada + re-treino automático ────────────────────────
