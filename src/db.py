@@ -15,6 +15,16 @@ def get_connection():
     )
 
 
+def ping() -> bool:
+    try:
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute("SELECT 1")
+            cur.fetchone()
+        return True
+    except Exception:
+        return False
+
+
 def init_tables() -> None:
     conn = get_connection()
     try:

@@ -1086,6 +1086,13 @@ def api_admin_treinar():
     return jsonify({"status": "ok", "mensagem": "Re-treino iniciado em background"})
 
 
+@app.route("/api/keepalive")
+def api_keepalive():
+    from src.db import ping
+    ok = ping()
+    return jsonify({"status": "ok" if ok else "erro", "db": ok})
+
+
 @app.route("/api/pipeline/status")
 def api_pipeline_status():
     """Estado do pipeline: última colecta, último treino, devices."""
