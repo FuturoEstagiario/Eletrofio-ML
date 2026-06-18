@@ -12,24 +12,12 @@ function calcCompositeScore(d) {
   return Math.min(ml * 0.40 + crit * 0.25 + degeloN * 0.20 + tempErrN * 0.15, 1);
 }
 
-function getScoreHistory() {
-  try { return JSON.parse(localStorage.getItem('ef_score_history') || '{}'); } catch { return {}; }
+function compositePoint(d, p) {
+  return calcCompositeScore({ risk_score: p.ml, criticidade: d.criticidade, degelo_fracao: p.degelo, temp_erro: p.erro });
 }
 
-function saveScoreHistory(data) {
-  const hist = getScoreHistory();
-  const now  = Date.now();
-  data.forEach(d => {
-    const key = String(d.dispositivo_id);
-    const arr = hist[key] || [];
-    arr.push({ ts: now, v: calcCompositeScore(d) });
-    hist[key] = arr.slice(-8);
-  });
-  try { localStorage.setItem('ef_score_history', JSON.stringify(hist)); } catch {}
-}
-
-function renderSparkline(deviceId, historyMap) {
-  const pts = (historyMap[String(deviceId)] || []).map(p => p.v);
+function renderSparkline(d) {
+  const pts = (d.score_series || []).map(p => compositePoint(d, p));
   if (pts.length < 2) return '<span style="font-size:.6rem;color:var(--muted)">—</span>';
 
   const W = 52, H = 18;
@@ -50,14 +38,12 @@ function renderSparkline(deviceId, historyMap) {
   </svg>`;
 }
 
-function estimarDiasFalha(deviceId) {
-  const hist = getScoreHistory();
-  const pts  = hist[String(deviceId)] || [];
-  if (pts.length < 3) return null;
+function estimarEtaHoras(d) {
+  const series = d.score_series || [];
+  if (series.length < 3) return null;
 
-  const now = Date.now();
-  const xs  = pts.map(p => (p.ts - now) / 86400000);
-  const ys  = pts.map(p => p.v);
+  const ys  = series.map(p => compositePoint(d, p));
+  const xs  = series.map(p => p.t / 60);
   const n   = xs.length;
   const sx  = xs.reduce((a, b) => a + b, 0);
   const sy  = ys.reduce((a, b) => a + b, 0);
@@ -67,13 +53,13 @@ function estimarDiasFalha(deviceId) {
   if (Math.abs(denom) < 1e-9) return null;
 
   const slope = (n * sxy - sx * sy) / denom;
-  const intercept = (sy - slope * sx) / n;
-  if (slope <= 0.001) return null;
+  if (slope <= 0.0005) return null;
 
   const THRESHOLD = 0.85;
-  if (intercept >= THRESHOLD) return 0;
-  const dias = Math.round((THRESHOLD - intercept) / slope);
-  return dias > 0 && dias <= 365 ? dias : null;
+  const lastScore = ys[ys.length - 1];
+  if (lastScore >= THRESHOLD) return 0;
+  const horas = (THRESHOLD - lastScore) / slope;
+  return horas > 0 && horas <= 24 ? Math.round(horas) : null;
 }
 
 function scoreColor(score) {
@@ -90,14 +76,14 @@ function tempErrColor(err) {
   return 'color:#22c55e';
 }
 
-function renderRow(d, historyMap) {
+function renderRow(d) {
   const composite = calcCompositeScore(d);
   const mlPct     = d.risk_score !== null && d.risk_score !== undefined
     ? Math.round(d.risk_score * 100) : null;
 
-  const dias = estimarDiasFalha(d.dispositivo_id);
-  const diasBadge = dias !== null
-    ? `<div style="font-size:.6rem;font-weight:600;margin-top:3px;color:${dias <= 7 ? '#ef4444' : dias <= 30 ? '#eab308' : '#4ade80'}">⏱ ~${dias}d p/ falha</div>`
+  const eta = estimarEtaHoras(d);
+  const etaBadge = eta !== null
+    ? `<div style="font-size:.6rem;font-weight:600;margin-top:3px;color:${eta <= 2 ? '#ef4444' : eta <= 8 ? '#eab308' : '#4ade80'}">⏱ ~${eta}h p/ limiar</div>`
     : '';
 
   const WARN_LABELS = {
@@ -120,10 +106,10 @@ function renderRow(d, historyMap) {
         <span style="font-size:.75rem;font-weight:700">${Math.round(composite*100)}%</span>
       </div>
       <div style="font-size:.62rem;color:var(--muted)">ML: ${mlPct !== null ? mlPct + '%' : 'N/A'}</div>
-      ${diasBadge}
+      ${etaBadge}
       ${alertasBadges ? `<div style="margin-top:3px">${alertasBadges}</div>` : ''}
     </div>
-    ${renderSparkline(d.dispositivo_id, historyMap)}
+    ${renderSparkline(d)}
   </div>`;
 
   const tempStr = d.temp_atual !== null && d.temp_atual !== undefined
@@ -169,7 +155,6 @@ function renderRow(d, historyMap) {
 function applyFilters() {
   const lojaFilter = document.getElementById('loja-filter').value;
   const sortBy     = document.getElementById('sort-filter').value;
-  const historyMap = getScoreHistory();
 
   let filtered = allData.filter(d => activeCrits.has(d.criticidade));
   if (lojaFilter) filtered = filtered.filter(d => d.loja_nome === lojaFilter);
@@ -189,7 +174,7 @@ function applyFilters() {
     empty.style.display = 'flex';
   } else {
     empty.style.display = 'none';
-    tbody.innerHTML = filtered.map(d => renderRow(d, historyMap)).join('');
+    tbody.innerHTML = filtered.map(d => renderRow(d)).join('');
   }
 }
 
@@ -256,7 +241,6 @@ async function loadData() {
     if (json.status !== 'ok') throw new Error(json.mensagem);
 
     allData = json.dados;
-    saveScoreHistory(allData);
     document.getElementById('risco-loading').style.display = 'none';
     updateKPIs(allData);
     renderExecSummary('exec-risco', buildRiscoExecItems(allData));

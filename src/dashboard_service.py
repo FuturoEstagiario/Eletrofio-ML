@@ -34,6 +34,43 @@ def _early_warnings(feats: dict) -> list[str]:
     return warns
 
 
+RF_FEATURE_COLS = [
+    "temp_media", "temp_maxima", "temp_minima",
+    "temp_amplitude", "temp_volatilidade", "temp_tendencia",
+]
+INTERVALO_LEITURA_MIN = 5
+
+
+def _score_window(feats: dict, modelos: dict) -> float | None:
+    if modelos.get("rf") is not None:
+        try:
+            mapped = {
+                "temp_media": feats.get("temp_mean", 0),
+                "temp_maxima": feats.get("temp_max", 0),
+                "temp_minima": feats.get("temp_min", 0),
+                "temp_amplitude": feats.get("temp_amplitude", 0),
+                "temp_volatilidade": feats.get("temp_std", 0),
+                "temp_tendencia": feats.get("temp_taxa_variacao_media", 0),
+            }
+            X = np.array([mapped[c] for c in RF_FEATURE_COLS]).reshape(1, -1)
+            return round(float(modelos["rf"].predict_proba(X)[0]), 4)
+        except Exception:
+            pass
+
+    if modelos.get("ocsvm") is not None:
+        try:
+            feat_keys = modelos["ocsvm"].feature_cols
+            if feat_keys:
+                X = np.array([feats.get(c, 0.0) for c in feat_keys]).reshape(1, -1)
+                X = np.nan_to_num(X, nan=0.0)
+                decision = modelos["ocsvm"].decision_function(X)[0]
+                return round(float(1 / (1 + np.exp(-decision))), 4)
+        except Exception:
+            pass
+
+    return None
+
+
 def risco_tabela(alarmes_raw: list[dict], tele_features: dict, modelos: dict) -> list[dict]:
     if not alarmes_raw:
         return []
@@ -64,38 +101,19 @@ def risco_tabela(alarmes_raw: list[dict], tele_features: dict, modelos: dict) ->
         temp_std = feats.get("temp_std")
         degelo_fracao = feats.get("degelo_fracao") or 0.0
 
-        risk_score = None
-        if modelos.get("rf") is not None:
-            try:
-                feature_cols = [
-                    "temp_media", "temp_maxima", "temp_minima", "temp_amplitude",
-                    "temp_volatilidade", "temp_tendencia",
-                ]
-                mapped = {
-                    "temp_media": feats.get("temp_mean", 0),
-                    "temp_maxima": feats.get("temp_max", 0),
-                    "temp_minima": feats.get("temp_min", 0),
-                    "temp_amplitude": feats.get("temp_amplitude", 0),
-                    "temp_volatilidade": feats.get("temp_std", 0),
-                    "temp_tendencia": feats.get("temp_taxa_variacao_media", 0),
-                }
-                row_vals = [mapped[c] for c in feature_cols]
-                X = np.array(row_vals).reshape(1, -1)
-                risk_score = round(float(modelos["rf"].predict_proba(X)[0]), 4)
-            except Exception:
-                risk_score = None
+        risk_score = _score_window(feats, modelos)
 
-        if risk_score is None and modelos.get("ocsvm") is not None:
-            try:
-                feat_keys = modelos["ocsvm"].feature_cols
-                if feat_keys:
-                    row_vals = [feats.get(c, 0.0) for c in feat_keys]
-                    X = np.array(row_vals).reshape(1, -1)
-                    X = np.nan_to_num(X, nan=0.0)
-                    decision = modelos["ocsvm"].decision_function(X)[0]
-                    risk_score = round(float(1 / (1 + np.exp(-decision))), 4)
-            except Exception:
-                risk_score = None
+        score_series = []
+        for w in feat_list:
+            ml_w = _score_window(w, modelos)
+            if ml_w is None:
+                continue
+            score_series.append({
+                "ml": ml_w,
+                "degelo": round(float(w.get("degelo_fracao") or 0.0) * 100, 1),
+                "erro": round(float(w.get("temp_erro_medio") or 0.0), 2),
+                "t": int(w.get("janela_fim", 0)) * INTERVALO_LEITURA_MIN,
+            })
 
         resultado.append({
             "dispositivo_id": int(did),
@@ -114,6 +132,7 @@ def risco_tabela(alarmes_raw: list[dict], tele_features: dict, modelos: dict) ->
             "degelo_fracao": round(float(degelo_fracao) * 100, 1),
             "risk_score": risk_score,
             "alertas": _early_warnings(feats),
+            "score_series": score_series,
         })
 
     resultado.sort(key=lambda x: CRIT_ORDER.get(x["criticidade"], 99))
